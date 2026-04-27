@@ -1,0 +1,194 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyToken } from '@/lib/auth-utils';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+import type { Message } from '@/lib/types';
+
+interface MessageRow {
+  id: number;
+  conversation_id: number;
+  sender_id: number;
+  type: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+}
+
+// 验证会话是否属于当前用户（防止越权）
+async function verifyConversationOwnership(client: ReturnType<typeof getSupabaseClient>, conversationId: number, userId: number): Promise<boolean> {
+  const { data: conversation } = await client
+    .from('conversations')
+    .select('id, user_id, type, target_id')
+    .eq('id', conversationId)
+    .single();
+
+  if (!conversation) return false;
+
+  // 如果是私聊，检查 user_id 或 target_id 是否为当前用户（双向会话）
+  if (conversation.type === 'private') {
+    return conversation.user_id === userId || conversation.target_id === userId;
+  }
+
+  // 如果是群聊，检查用户是否是群成员
+  if (conversation.type === 'group') {
+    const { data: member } = await client
+      .from('group_members')
+      .select('id')
+      .eq('group_id', conversation.target_id)
+      .eq('user_id', userId)
+      .single();
+    return !!member;
+  }
+
+  return false;
+}
+
+// GET - 获取消息列表
+export async function GET(request: NextRequest) {
+  try {
+    const payload = await verifyToken(request);
+    if (!payload) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const conversation_id = searchParams.get('conversation_id');
+    const limit = parseInt(searchParams.get('limit') || '50');
+    const offset = parseInt(searchParams.get('offset') || '0');
+    const before = searchParams.get('before'); // 用于加载历史消息
+
+    if (!conversation_id) {
+      return NextResponse.json({ error: '缺少会话ID' }, { status: 400 });
+    }
+
+    const client = getSupabaseClient();
+
+    // 校验会话归属（防止越权读取）
+    const isOwner = await verifyConversationOwnership(client, parseInt(conversation_id), payload.userId);
+    if (!isOwner) {
+      return NextResponse.json({ error: '无权访问该会话' }, { status: 403 });
+    }
+    
+    // 构建查询
+    let query = client
+      .from('messages')
+      .select('id, conversation_id, sender_id, type, content, metadata, created_at')
+      .eq('conversation_id', conversation_id)
+      .order('created_at', { ascending: true });
+
+    // 如果有 before 参数，加载该消息之前的消息
+    if (before) {
+      const { data: beforeMsg } = await client
+        .from('messages')
+        .select('created_at')
+        .eq('id', before)
+        .single();
+      
+      if (beforeMsg) {
+        query = query.lt('created_at', beforeMsg.created_at);
+      }
+      // 按最新在前排序，返回后反转
+      query = query.order('created_at', { ascending: false });
+    }
+    
+    // 应用分页
+    const { data: messages, error } = await query.range(offset, offset + limit - 1);
+
+    if (error) throw new Error(`查询消息失败: ${error.message}`);
+
+    // 如果是加载历史消息，需要反转顺序
+    const sortedMessages: MessageRow[] = before ? (messages || []).reverse() : messages || [];
+
+    // 获取发送者信息
+    if (sortedMessages.length > 0) {
+      const senderIds = [...new Set(sortedMessages.map((m: MessageRow) => m.sender_id))];
+      const { data: senders } = await client
+        .from('users')
+        .select('id, nickname, avatar_color')
+        .in('id', senderIds);
+
+      const messagesWithSenders = sortedMessages.map((msg: MessageRow) => {
+        const sender = senders?.find((s) => s.id === msg.sender_id);
+        return {
+          ...msg,
+          sender_nickname: sender?.nickname || '未知',
+          sender_avatar: sender?.avatar_color || '#666',
+          is_mine: msg.sender_id === payload.userId, // 添加消息归属标记
+        };
+      });
+
+      return NextResponse.json({ messages: messagesWithSenders });
+    }
+
+    return NextResponse.json({ messages: [] });
+  } catch (err) {
+    console.error('获取消息列表错误:', err);
+    return NextResponse.json({ error: '服务器错误' }, { status: 500 });
+  }
+}
+
+// POST - 发送消息
+export async function POST(request: NextRequest) {
+  try {
+    const payload = await verifyToken(request);
+    if (!payload) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
+    const { conversation_id, type, content, metadata } = await request.json();
+    
+    if (!conversation_id || !content) {
+      return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
+    }
+
+    const client = getSupabaseClient();
+
+    // 校验会话归属（防止越权发送）
+    const isOwner = await verifyConversationOwnership(client, conversation_id, payload.userId);
+    if (!isOwner) {
+      return NextResponse.json({ error: '无权向该会话发送消息' }, { status: 403 });
+    }
+
+    // 插入消息
+    const { data: message, error } = await client
+      .from('messages')
+      .insert({
+        conversation_id,
+        sender_id: payload.userId,
+        type: type || 'text',
+        content,
+        metadata: metadata || {},
+      })
+      .select('id, conversation_id, sender_id, type, content, metadata, created_at')
+      .single();
+
+    if (error) throw new Error(`发送消息失败: ${error.message}`);
+
+    // 更新会话的最后消息
+    await client
+      .from('conversations')
+      .update({
+        last_message: type === 'image' ? '[图片]' : content.substring(0, 50),
+        last_message_time: message.created_at,
+      })
+      .eq('id', conversation_id);
+
+    // 获取发送者信息
+    const { data: sender } = await client
+      .from('users')
+      .select('id, nickname, avatar_color')
+      .eq('id', payload.userId)
+      .single();
+
+    return NextResponse.json({
+      message: {
+        ...message,
+        sender_nickname: sender?.nickname || '未知',
+        sender_avatar: sender?.avatar_color || '#666',
+        is_mine: true, // 自己发送的消息
+      }
+    });
+  } catch (err) {
+    console.error('发送消息错误:', err);
+    return NextResponse.json({ error: '服务器错误' }, { status: 500 });
+  }
+}

@@ -1,0 +1,120 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyToken } from '@/lib/auth-utils';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+
+
+// GET - 获取会话列表
+export async function GET(request: NextRequest) {
+  try {
+    const payload = await verifyToken(request);
+    if (!payload) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
+    const client = getSupabaseClient();
+    
+    // 获取会话列表
+    const { data: conversations, error: convError } = await client
+      .from('conversations')
+      .select('*')
+      .eq('user_id', payload.userId)
+      .order('last_message_time', { ascending: false });
+
+    if (convError) throw new Error(`查询会话失败: ${convError.message}`);
+    
+    if (!conversations || conversations.length === 0) {
+      return NextResponse.json({ conversations: [] });
+    }
+
+    // 获取会话对应的目标信息
+    const privateConv = conversations.filter(c => c.type === 'private');
+    const groupConv = conversations.filter(c => c.type === 'group');
+
+    let targets: { id: number; nickname?: string; name?: string; avatar_color?: string; status?: string }[] = [];
+    
+    if (privateConv.length > 0) {
+      const userIds = privateConv.map(c => c.target_id);
+      const { data: users } = await client
+        .from('users')
+        .select('id, nickname, avatar_color, status')
+        .in('id', userIds);
+      targets = [...targets, ...(users || [])];
+    }
+
+    if (groupConv.length > 0) {
+      const groupIds = groupConv.map(c => c.target_id);
+      const { data: groups } = await client
+        .from('groups')
+        .select('id, name, avatar_color')
+        .in('id', groupIds);
+      targets = [...targets, ...(groups || [])];
+    }
+
+    // 合并数据
+    const conversationsWithTargets = conversations.map(conv => {
+      const target = targets.find(t => t.id === conv.target_id);
+      return {
+        ...conv,
+        target_name: target?.nickname || target?.name || '未知',
+        target_avatar: target?.avatar_color || '#666',
+        target_status: target?.status,
+      };
+    });
+
+    return NextResponse.json({ conversations: conversationsWithTargets });
+  } catch (err) {
+    console.error('获取会话列表错误:', err);
+    return NextResponse.json({ error: '服务器错误' }, { status: 500 });
+  }
+}
+
+// POST - 创建或获取会话
+export async function POST(request: NextRequest) {
+  try {
+    const payload = await verifyToken(request);
+    if (!payload) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
+    const { type, target_id } = await request.json();
+    
+    if (!type || !target_id) {
+      return NextResponse.json({ error: '缺少参数' }, { status: 400 });
+    }
+
+    const client = getSupabaseClient();
+    
+    // 检查会话是否已存在
+    const { data: existing } = await client
+      .from('conversations')
+      .select('*')
+      .eq('user_id', payload.userId)
+      .eq('type', type)
+      .eq('target_id', target_id)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json({ conversation: existing });
+    }
+
+    // 创建新会话
+    const { data, error } = await client
+      .from('conversations')
+      .insert({
+        type,
+        user_id: payload.userId,
+        target_id,
+        last_message: '',
+        unread_count: 0,
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(`创建会话失败: ${error.message}`);
+
+    return NextResponse.json({ conversation: data });
+  } catch (err) {
+    console.error('创建会话错误:', err);
+    return NextResponse.json({ error: '服务器错误' }, { status: 500 });
+  }
+}
