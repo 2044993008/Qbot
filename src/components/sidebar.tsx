@@ -13,6 +13,7 @@ import {
   Search,
   ChevronLeft,
   Clock,
+  ShieldCheck,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -32,6 +33,7 @@ export function Sidebar({ onSelectChat }: SidebarProps) {
     { id: 'friends', label: '联系人', icon: Users, href: '/app/friends' },
     { id: 'moments', label: '空间', icon: Image, href: '/app/moments' },
     { id: 'tasks', label: '定时任务', icon: Clock, href: '/app/scheduled-tasks' },
+    { id: 'audit', label: '操作记录', icon: ShieldCheck, href: '/app/audit-logs' },
     { id: 'profile', label: '我的', icon: User, href: '/app/profile' },
   ];
 
@@ -121,6 +123,7 @@ export function MobileNav() {
     { id: 'friends', label: '联系人', icon: Users, href: '/app/friends' },
     { id: 'moments', label: '空间', icon: Image, href: '/app/moments' },
     { id: 'tasks', label: '定时任务', icon: Clock, href: '/app/scheduled-tasks' },
+    { id: 'audit', label: '操作记录', icon: ShieldCheck, href: '/app/audit-logs' },
     { id: 'profile', label: '我的', icon: User, href: '/app/profile' },
   ];
 

@@ -1,4 +1,4 @@
-import type { User, Friend, Group, GroupMember, Conversation, Message, Moment, BotResponse, MessagePreview, ScheduledTask } from './types';
+import type { User, Friend, Group, GroupMember, Conversation, Message, Moment, BotResponse, MessagePreview, ScheduledTask, BotAuditLog } from './types';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'qq_token';
@@ -185,6 +185,11 @@ export const botApi = {
 
   getConfig: () =>
     request<{ bot: User | null; name: string }>('/bot'),
+
+  getAuditLogs: (page = 1, limit = 20) =>
+    request<{ logs: BotAuditLog[]; total: number; page: number; limit: number }>(
+      `/bot/audit-logs?page=${page}&limit=${limit}`
+    ),
 };
 
 // 设置 API

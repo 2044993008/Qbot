@@ -195,3 +195,22 @@ export interface TaskExecutionLog {
   started_at: string;
   completed_at?: string;
 }
+
+// Bot 审计日志类型
+export interface BotAuditLog {
+  id: number;
+  user_id: number;
+  session_id: string;
+  request: string;
+  plan: Record<string, unknown>;
+  tool_calls: unknown[];
+  response: string;
+  latency_ms: number;
+  tokens_used: number;
+  model: string;
+  status: string;
+  error: string;
+  created_at: string;
+}
+
+
