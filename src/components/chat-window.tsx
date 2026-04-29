@@ -5,12 +5,13 @@ import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useMessages, useGroups } from '@/lib/hooks';
-import { conversationsApi, messagesApi } from '@/lib/api';
+import { botApi, conversationsApi, messagesApi, momentsApi } from '@/lib/api';
 import { Send, Image as ImageIcon, AtSign, X, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/lib/auth-context';
-import type { GroupMember, Message, SearchResult, User } from '@/lib/types';
+import type { GroupMember, Message, SearchResult, User, BotResponse } from '@/lib/types';
+import { getMessageRenderer } from '@/components/message-renderers';
 
 interface ChatWindowProps {
   type: 'private' | 'group';
@@ -18,6 +19,7 @@ interface ChatWindowProps {
   targetName: string;
   targetAvatar?: string;
   onBack?: () => void;
+  isBotConversation?: boolean;
 }
 
 // 获取管家用户信息（动态获取，而非硬编码）
@@ -40,6 +42,7 @@ export default function ChatWindow({
   targetName, 
   targetAvatar,
   onBack,
+  isBotConversation = false,
 }: ChatWindowProps) {
   const { user } = useAuth();
   const currentUserId = user?.id || 0;
@@ -57,6 +60,7 @@ export default function ChatWindow({
   const topRef = useRef<HTMLDivElement>(null);
   
   const { messages, fetchMessages, sendMessage, setMessages } = useMessages(conversationId);
+  const shouldAutoReplyAsBot = isBotConversation || (botUser !== null && targetId === botUser.id);
 
   // 获取管家用户信息
   useEffect(() => {
@@ -106,9 +110,9 @@ export default function ChatWindow({
 
   // 滚动到底部
   useEffect(() => {
-    if (messages.length > 0) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+      if (messages.length > 0) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
   }, [messages.length]);
 
   // 加载更多历史消息
@@ -150,49 +154,328 @@ export default function ChatWindow({
 
     try {
       // 发送到服务器（sendMessage 会自动添加消息到列表）
-      await sendMessage('text', content);
+      const sentMessage = await sendMessage('text', content);
 
-      // 模拟管家回复（通过动态获取的管家用户 ID 判断）
-      if (botUser && targetId === botUser.id) {
-        setTimeout(async () => {
-          try {
-            const response = await fetch('/api/bot', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({ message: content }),
-            });
-            const data = await response.json();
-            
-            if (data.response) {
-              const botMessage: Message & { searchResults?: SearchResult[] } = {
-                id: Date.now() + 1,
+      if (!sentMessage) {
+        // 发送失败，恢复输入框并显示错误提示
+        setInputMessage(content);
+        const errorMsg: Message = {
+          id: -Date.now(),
+          conversation_id: conversationId,
+          sender_id: 0,
+          sender_nickname: '系统',
+          sender_avatar: '#ef4444',
+          type: 'text',
+          content: '消息发送失败，请检查网络后重试',
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, errorMsg]);
+        setIsTyping(false);
+        return;
+      }
+
+      // 模拟管家回复（通过显式会话标记判断）
+      if (shouldAutoReplyAsBot && botUser) {
+        try {
+          // 【流式输出】使用 SSE 获取打字机效果
+          const useStreaming = true; // 可通过设置切换
+          if (useStreaming) {
+            await handleStreamBotResponse(content, conversationId, botUser);
+          } else {
+            // 回退到同步模式
+            const botResponse = await botApi.send(content, conversationId);
+            if (botResponse.type === 'preview' && botResponse.preview) {
+              const previewMessage: Message = {
+                id: -Date.now(),
                 conversation_id: conversationId,
                 sender_id: botUser.id,
-                sender_nickname: botUser.nickname || '小 Q 管家',
-                sender_avatar: botUser.avatar_color || '#6366f1',
-                type: 'text' as const,
-                content: data.response,
+                sender_nickname: botUser.nickname,
+                sender_avatar: botUser.avatar_color,
+                type: 'text',
+                content: botResponse.response,
+                metadata: { preview: botResponse.preview, isPreview: true },
                 created_at: new Date().toISOString(),
-                is_mine: false,
               };
-              
-              if (data.type === 'search_results' && data.results) {
-                botMessage.searchResults = data.results as SearchResult[];
-              }
-              
-              setMessages(prev => [...prev, botMessage]);
+              setMessages(prev => [...prev, previewMessage]);
+            } else {
+              await fetchMessages();
             }
-          } catch (error) {
-            console.error('管家回复失败:', error);
           }
-        }, 1000);
+        } catch (error) {
+          console.error('管家回复失败:', error);
+        }
       }
     } catch (error) {
       console.error('发送消息失败:', error);
     } finally {
       setIsTyping(false);
     }
+  };
+
+  // 处理流式 Bot 回复（SSE 打字机效果）
+  const handleStreamBotResponse = async (userContent: string, convId: number, bot: User) => {
+    const tempId = -Date.now();
+    let fullContent = '';
+
+    // 先添加一个空的 Bot 消息占位
+    const tempMessage: Message = {
+      id: tempId,
+      conversation_id: convId,
+      sender_id: bot.id,
+      sender_nickname: bot.nickname,
+      sender_avatar: bot.avatar_color,
+      type: 'text',
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, tempMessage]);
+
+    try {
+      const response = await fetch('/api/bot/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userContent,
+          conversation_id: convId,
+        }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error('SSE 连接失败');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'delta' && data.content) {
+                fullContent += data.content;
+                setMessages(prev =>
+                  prev.map(m => (m.id === tempId ? { ...m, content: fullContent } : m))
+                );
+              } else if (data.type === 'done') {
+                fullContent = data.fullContent || fullContent;
+              } else if (data.error) {
+                console.error('SSE error:', data.error);
+              }
+            } catch {
+              // 忽略解析错误
+            }
+          }
+        }
+      }
+
+      // 更新最终内容
+      setMessages(prev =>
+        prev.map(m => (m.id === tempId ? { ...m, content: fullContent } : m))
+      );
+    } catch (error) {
+      console.error('流式 Bot 回复失败:', error);
+      // 显示错误消息
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === tempId
+            ? { ...m, content: '抱歉，我这边出了点小问题，能再说一遍吗？' }
+            : m
+        )
+      );
+    }
+  };
+
+  // 处理确认预览操作
+  const handleConfirmAction = async (msg: Message) => {
+    const preview = msg.metadata?.preview as BotResponse['preview'];
+    if (!preview) return;
+
+    try {
+      if (preview.action === 'send_message' && preview.target_id) {
+        const convType = preview.target_type === 'group' ? 'group' : 'private';
+        const conv = await conversationsApi.getOrCreate(convType, preview.target_id);
+        // 支持文本+图片组合发送
+        if (preview.content) {
+          await messagesApi.send(conv.conversation.id, 'text', preview.content);
+        }
+        if (preview.image_url) {
+          await messagesApi.send(conv.conversation.id, 'image', preview.image_url);
+        }
+        // 移除预览消息，刷新列表
+        setMessages(prev => prev.filter(m => m.id !== msg.id));
+        await fetchMessages();
+        return;
+      } else if (preview.action === 'publish_moment') {
+        await momentsApi.publish(preview.content || '', preview.image_urls);
+      } else if (preview.action === 'generate_image') {
+        const result = await botApi.executeTool('generate_image', { prompt: preview.prompt, style: preview.style });
+        if (result.imageUrl && conversationId) {
+          await messagesApi.send(conversationId, 'image', result.imageUrl);
+          // 移除预览消息，刷新列表显示图片
+          setMessages(prev => prev.filter(m => m.id !== msg.id));
+          await fetchMessages();
+          return;
+        } else {
+          // 图片生成失败
+          setMessages(prev => prev.filter(m => m.id !== msg.id));
+          const failMsg: Message = {
+            id: -Date.now() - 1,
+            conversation_id: conversationId!,
+            sender_id: botUser!.id,
+            sender_nickname: botUser!.nickname,
+            sender_avatar: botUser!.avatar_color,
+            type: 'text',
+            content: result.error || '图片生成失败了，请稍后再试~',
+            created_at: new Date().toISOString(),
+          };
+          setMessages(prev => [...prev, failMsg]);
+          return;
+        }
+      } else if (preview.action === 'generate_video') {
+        const result = await botApi.executeTool('generate_video', { prompt: preview.prompt, duration: preview.duration });
+        if (result.videoUrl && conversationId) {
+          await messagesApi.send(conversationId, 'image', result.videoUrl);
+          // 移除预览消息，刷新列表显示视频
+          setMessages(prev => prev.filter(m => m.id !== msg.id));
+          await fetchMessages();
+          return;
+        } else {
+          setMessages(prev => prev.filter(m => m.id !== msg.id));
+          const failMsg: Message = {
+            id: -Date.now() - 1,
+            conversation_id: conversationId!,
+            sender_id: botUser!.id,
+            sender_nickname: botUser!.nickname,
+            sender_avatar: botUser!.avatar_color,
+            type: 'text',
+            content: result.error || '视频生成失败了，请稍后再试~',
+            created_at: new Date().toISOString(),
+          };
+          setMessages(prev => [...prev, failMsg]);
+          return;
+        }
+      } else if (preview.action === 'delete_friend' && preview.friend_id) {
+        const result = await botApi.executeTool('delete_friend', { friend_id: preview.friend_id });
+        if (result.success) {
+          setMessages(prev => prev.filter(m => m.id !== msg.id));
+          const successMsg: Message = {
+            id: -Date.now() - 1,
+            conversation_id: conversationId!,
+            sender_id: botUser!.id,
+            sender_nickname: botUser!.nickname,
+            sender_avatar: botUser!.avatar_color,
+            type: 'text',
+            content: `已删除好友「${preview.friend_name || preview.target || ''}」`,
+            created_at: new Date().toISOString(),
+          };
+          setMessages(prev => [...prev, successMsg]);
+          return;
+        } else {
+          throw new Error(result.error || '删除好友失败');
+        }
+      } else if (preview.action === 'leave_group' && preview.group_id) {
+        const result = await botApi.executeTool('leave_group', { group_id: preview.group_id });
+        if (result.success) {
+          setMessages(prev => prev.filter(m => m.id !== msg.id));
+          const successMsg: Message = {
+            id: -Date.now() - 1,
+            conversation_id: conversationId!,
+            sender_id: botUser!.id,
+            sender_nickname: botUser!.nickname,
+            sender_avatar: botUser!.avatar_color,
+            type: 'text',
+            content: `已退出群聊「${preview.group_name || preview.target || ''}」`,
+            created_at: new Date().toISOString(),
+          };
+          setMessages(prev => [...prev, successMsg]);
+          return;
+        } else {
+          throw new Error(result.error || '退出群聊失败');
+        }
+      } else if (preview.action === 'edit_moment' && preview.moment_id) {
+        await momentsApi.update(preview.moment_id, { content: preview.new_content, images: preview.new_images });
+        setMessages(prev => prev.filter(m => m.id !== msg.id));
+        const successMsg: Message = {
+          id: -Date.now() - 1,
+          conversation_id: conversationId!,
+          sender_id: botUser!.id,
+          sender_nickname: botUser!.nickname,
+          sender_avatar: botUser!.avatar_color,
+          type: 'text',
+          content: '动态已编辑~',
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, successMsg]);
+        return;
+      } else if (preview.action === 'delete_moment' && preview.moment_id) {
+        await momentsApi.delete(preview.moment_id);
+        setMessages(prev => prev.filter(m => m.id !== msg.id));
+        const successMsg: Message = {
+          id: -Date.now() - 1,
+          conversation_id: conversationId!,
+          sender_id: botUser!.id,
+          sender_nickname: botUser!.nickname,
+          sender_avatar: botUser!.avatar_color,
+          type: 'text',
+          content: '动态已删除~',
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, successMsg]);
+        return;
+      }
+
+      // 移除预览消息，添加成功提示
+      setMessages(prev => prev.filter(m => m.id !== msg.id));
+      const successMessage: Message = {
+        id: -Date.now() - 1,
+        conversation_id: conversationId!,
+        sender_id: botUser!.id,
+        sender_nickname: botUser!.nickname,
+        sender_avatar: botUser!.avatar_color,
+        type: 'text',
+        content: '操作已完成~',
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, successMessage]);
+    } catch (error) {
+      console.error('确认操作失败:', error);
+      // 移除预览消息，添加失败提示
+      setMessages(prev => prev.filter(m => m.id !== msg.id));
+      const errorMessage: Message = {
+        id: -Date.now() - 1,
+        conversation_id: conversationId!,
+        sender_id: botUser!.id,
+        sender_nickname: botUser!.nickname,
+        sender_avatar: botUser!.avatar_color,
+        type: 'text',
+        content: '操作失败了，请稍后再试~',
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    }
+  };
+
+  // 处理取消预览操作
+  const handleCancelAction = (msg: Message) => {
+    setMessages(prev => prev.filter(m => m.id !== msg.id));
+    const cancelMessage: Message = {
+      id: -Date.now() - 1,
+      conversation_id: conversationId!,
+      sender_id: botUser!.id,
+      sender_nickname: botUser!.nickname,
+      sender_avatar: botUser!.avatar_color,
+      type: 'text',
+      content: '已取消操作~',
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, cancelMessage]);
   };
 
   // 处理 @ 提及
@@ -232,42 +515,22 @@ export default function ChatWindow({
     return members.find(m => m.nickname === nickname)?.role;
   };
 
-  // 渲染消息气泡
-  const renderMessageBubble = (msg: Message, isMine: boolean) => (
-    <div className={`message-bubble ${isMine ? 'message-bubble-sent' : 'message-bubble-received'}`}>
-      {msg.type === 'image' ? (
-        <img src={msg.content} alt="图片" className="max-w-full rounded-lg" />
-      ) : (
-        <div>
-          <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-          {/* AI 管家搜索结果 */}
-          {msg.searchResults && msg.searchResults.length > 0 && (
-            <div className="mt-3 space-y-2 border-t border-gray-200 pt-3">
-              {msg.searchResults.slice(0, 5).map((result, idx) => (
-                <div key={idx} className="bg-white/60 rounded-lg p-3 text-sm border border-gray-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="font-medium text-blue-600">{result.sender}</span>
-                    {result.role && result.role !== '普通成员' && (
-                      <span className="px-1.5 py-0.5 bg-purple-100 text-purple-600 text-xs rounded">
-                        {result.role}
-                      </span>
-                    )}
-                    <span className="text-xs text-gray-400">{result.time}</span>
-                  </div>
-                  <p className="text-gray-700 text-sm leading-relaxed">{result.content}</p>
-                </div>
-              ))}
-              {msg.searchResults.length > 5 && (
-                <p className="text-xs text-gray-500 text-center py-1">
-                  还有 {msg.searchResults.length - 5} 条消息...
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  // 渲染消息气泡（使用插件化渲染器）
+  const renderMessageBubble = (msg: Message, isMine: boolean) => {
+    const Renderer = getMessageRenderer(msg);
+    return (
+      <Renderer
+        msg={msg}
+        isMine={isMine}
+        botUser={botUser}
+        conversationId={conversationId}
+        onConfirmAction={handleConfirmAction}
+        onCancelAction={handleCancelAction}
+        fetchMessages={fetchMessages}
+        setMessages={setMessages}
+      />
+    );
+  };
 
   return (
     <div className="flex flex-col" style={{ height: '100%' }}>

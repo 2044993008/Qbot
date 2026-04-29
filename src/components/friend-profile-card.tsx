@@ -9,7 +9,6 @@ import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import type { Friend, MessagePreview } from '@/lib/types';
 import { friendsApi } from '@/lib/api';
-import { format } from 'date-fns';
 
 interface FriendProfileCardProps {
   friendId: number;
@@ -40,9 +39,17 @@ export function FriendProfileCard({ friendId, onClose, onStartChat }: FriendProf
     loadFriendDetail();
   }, [friendId]);
 
+  const refreshFriendDetail = async () => {
+    const response = await friendsApi.getDetail(friendId);
+    setFriend(response.friend);
+    setRecentMessages(response.recentMessages || []);
+    setRemark(response.friend.remark || '');
+  };
+
   const handleSaveRemark = async () => {
     try {
       await friendsApi.updateRemark(friendId, remark);
+      await refreshFriendDetail();
       setIsEditingRemark(false);
     } catch (error) {
       console.error('保存备注失败:', error);
@@ -147,7 +154,13 @@ export function FriendProfileCard({ friendId, onClose, onStartChat }: FriendProf
           {/* 加入时间 */}
           <div className="flex items-center gap-2 text-gray-500 text-sm">
             <Calendar className="w-4 h-4" />
-            <span>成为好友 {formatDistanceToNow(new Date(friend.created_at || Date.now()), { addSuffix: true, locale: zhCN })}</span>
+            <span>
+              成为好友{' '}
+              {formatDistanceToNow(new Date(friend.friendship_created_at || Date.now()), {
+                addSuffix: true,
+                locale: zhCN,
+              })}
+            </span>
           </div>
 
           {/* 最近聊天记录 */}
