@@ -53,6 +53,15 @@ export default function ProfilePage() {
     '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'
   ];
 
+  const handleAvatarColorChange = async (avatarColor: string) => {
+    try {
+      await userApi.updateProfile({ avatar_color: avatarColor });
+      await refreshUser();
+    } catch (error) {
+      console.error('更新头像颜色失败:', error);
+    }
+  };
+
   return (
     <div className="h-screen flex overflow-hidden">
       {/* 侧边栏 */}
@@ -93,7 +102,7 @@ export default function ProfilePage() {
                         {colors.map((color) => (
                           <button
                             key={color}
-                            onClick={() => user && userApi.updateProfile({ avatar_color: color })}
+                            onClick={() => void handleAvatarColorChange(color)}
                             className="w-10 h-10 rounded-full border-2 transition-transform hover:scale-110"
                             style={{ backgroundColor: color, borderColor: user?.avatar_color === color ? '#12b7f5' : 'transparent' }}
                           />

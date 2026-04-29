@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import ChatWindow from '@/components/chat-window';
 import { useAuth } from '@/lib/auth-context';
 import { friendsApi, conversationsApi, botApi } from '@/lib/api';
+import type { Conversation, Friend } from '@/lib/types';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -19,10 +20,86 @@ export default function ChatPage({ params }: PageProps) {
   const [botUserId, setBotUserId] = useState<number | null>(null);
   const [isBotReady, setIsBotReady] = useState(false);
   const [targetInfo, setTargetInfo] = useState<{
+    type: 'private' | 'group';
     id: number;
     name: string;
     avatar?: string;
   } | null>(null);
+
+  const loadFriendTargetInfo = async (urlId: number): Promise<boolean> => {
+    try {
+      const friendResponse = await friendsApi.getDetail(urlId);
+      const friend = friendResponse.friend as Friend | undefined;
+
+      if (!friend) {
+        return false;
+      }
+
+      if (
+        (botUserId !== null && friend.id === botUserId) ||
+        friend.nickname?.includes('管家') ||
+        friend.nickname?.includes('Bot')
+      ) {
+        setTargetInfo({
+          type: 'private',
+          id: botUserId ?? friend.id,
+          name: BOT_USER_NAME,
+          avatar: friend.avatar_color || '#6366f1',
+        });
+        return true;
+      }
+
+      setTargetInfo({
+        type: 'private',
+        id: friend.id,
+        name: friend.remark || friend.nickname,
+        avatar: friend.avatar_color,
+      });
+      return true;
+    } catch (error) {
+      console.error('获取好友信息失败，尝试按会话解析:', error);
+      return false;
+    }
+  };
+
+  const loadConversationTargetInfo = async (urlId: number): Promise<boolean> => {
+    try {
+      const convResponse = await conversationsApi.getDetail(urlId);
+      const conv = convResponse.conversation as Conversation | undefined;
+
+      if (!conv) {
+        return false;
+      }
+
+      if (conv.type === 'private' && botUserId !== null && conv.target_id === botUserId) {
+        setTargetInfo({
+          type: 'private',
+          id: botUserId,
+          name: BOT_USER_NAME,
+          avatar: conv.target_user?.avatar_color || '#6366f1',
+        });
+      } else if (conv.type === 'group') {
+        setTargetInfo({
+          type: 'group',
+          id: conv.target_id,
+          name: conv.group?.name || '群聊',
+          avatar: conv.group?.avatar_color || '#6366f1',
+        });
+      } else {
+        setTargetInfo({
+          type: 'private',
+          id: conv.target_id,
+          name: conv.target_user?.nickname || '私聊',
+          avatar: conv.target_user?.avatar_color || '#999999',
+        });
+      }
+
+      return true;
+    } catch (error) {
+      console.error('获取会话信息失败:', error);
+      return false;
+    }
+  };
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -46,58 +123,19 @@ export default function ChatPage({ params }: PageProps) {
       const loadConversationInfo = async () => {
         try {
           const urlId = parseInt(resolvedParams.id);
-          const friendResponse = await friendsApi.getDetail(urlId);
-
-          if (friendResponse.friend) {
-            const friend = friendResponse.friend;
-            if (
-              (botUserId !== null && friend.id === botUserId) ||
-              friend.nickname?.includes('管家') ||
-              friend.nickname?.includes('Bot')
-            ) {
-              setTargetInfo({
-                id: botUserId ?? friend.id,
-                name: BOT_USER_NAME,
-                avatar: friend.avatar_color || '#6366f1',
-              });
-              return;
-            }
-
-            setTargetInfo({
-              id: friend.id,
-              name: friend.remark || friend.nickname,
-              avatar: friend.avatar_color,
-            });
+          const loadedFriend = await loadFriendTargetInfo(urlId);
+          if (loadedFriend) {
             return;
           }
 
-          const convResponse = await conversationsApi.getDetail(urlId);
-          if (convResponse.conversation) {
-            const conv = convResponse.conversation;
-            if (conv.type === 'private' && botUserId !== null && conv.target_id === botUserId) {
-              setTargetInfo({
-                id: botUserId,
-                name: BOT_USER_NAME,
-                avatar: conv.target_user?.avatar_color || '#6366f1',
-              });
-            } else if (conv.type === 'group') {
-              setTargetInfo({
-                id: conv.target_id,
-                name: conv.group?.name || '群聊',
-                avatar: conv.group?.avatar_color || '#6366f1',
-              });
-            } else {
-              setTargetInfo({
-                id: conv.target_id,
-                name: conv.target_user?.nickname || '私聊',
-                avatar: conv.target_user?.avatar_color || '#999999',
-              });
-            }
+          const loadedConversation = await loadConversationTargetInfo(urlId);
+          if (loadedConversation) {
             return;
           }
 
           if (botUserId !== null && urlId === botUserId) {
             setTargetInfo({
+              type: 'private',
               id: botUserId,
               name: BOT_USER_NAME,
               avatar: '#6366f1',
@@ -126,11 +164,12 @@ export default function ChatPage({ params }: PageProps) {
   return (
     <div className="h-screen flex flex-col">
       <ChatWindow
-        type="private"
+        type={targetInfo.type}
         targetId={targetInfo.id}
         targetName={targetInfo.name}
         targetAvatar={targetInfo.avatar}
         onBack={() => router.back()}
+        isBotConversation={targetInfo.type === 'private' && botUserId !== null && targetInfo.id === botUserId}
       />
     </div>
   );

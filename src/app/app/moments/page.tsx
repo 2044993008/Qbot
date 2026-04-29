@@ -7,23 +7,46 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useMoments } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth-context';
-import { Heart, MessageCircle, Send, Image as ImageIcon, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Heart, MessageCircle, Send, Image as ImageIcon, X, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { uploadApi } from '@/lib/api';
 
 export default function MomentsPage() {
   const { user, isLoading: authLoading, isAuthenticated } = useAuth();
-  const { moments, fetchMoments, publishMoment, likeMoment, commentMoment } = useMoments();
+  const { moments, fetchMoments, publishMoment, likeMoment, commentMoment, editMoment, deleteMoment } = useMoments();
   const [isPublishing, setIsPublishing] = useState(false);
   const [newContent, setNewContent] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [commentInputs, setCommentInputs] = useState<Record<number, string>>({});
   const [expandedComments, setExpandedComments] = useState<Record<number, boolean>>({});
   const [showAllComments, setShowAllComments] = useState<Record<number, boolean>>({});
+  const [editingMoment, setEditingMoment] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [editImages, setEditImages] = useState<string[]>([]);
+  const [isEditing, setIsEditing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // 只有在用户已认证且不再加载时才获取数据
@@ -55,12 +78,15 @@ export default function MomentsPage() {
 
     setIsPublishing(true);
     try {
-      await publishMoment(newContent, selectedImages);
+      const createdMoment = await publishMoment(newContent, selectedImages);
+      if (!createdMoment) {
+        return;
+      }
       setNewContent('');
       setSelectedImages([]);
-      setIsPublishing(false);
     } catch (error) {
       console.error('发布动态失败:', error);
+    } finally {
       setIsPublishing(false);
     }
   };
@@ -70,7 +96,10 @@ export default function MomentsPage() {
     if (!content?.trim()) return;
 
     try {
-      await commentMoment(momentId, content);
+      const createdComment = await commentMoment(momentId, content);
+      if (!createdComment) {
+        return;
+      }
       setCommentInputs(prev => ({ ...prev, [momentId]: '' }));
     } catch (error) {
       console.error('评论失败:', error);
@@ -83,6 +112,61 @@ export default function MomentsPage() {
 
   const showMoreComments = (momentId: number) => {
     setShowAllComments(prev => ({ ...prev, [momentId]: true }));
+  };
+
+  const handleEditImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    for (let i = 0; i < files.length && editImages.length < 9; i++) {
+      try {
+        const result = await uploadApi.image(files[i]);
+        setEditImages(prev => [...prev, result.url]);
+      } catch (error) {
+        console.error('上传图片失败:', error);
+      }
+    }
+
+    if (editFileInputRef.current) {
+      editFileInputRef.current.value = '';
+    }
+  };
+
+  const openEditDialog = (momentId: number) => {
+    const moment = moments.find(m => m.id === momentId);
+    if (!moment) return;
+    setEditingMoment(momentId);
+    setEditContent(moment.content);
+    setEditImages(moment.images || []);
+  };
+
+  const closeEditDialog = () => {
+    setEditingMoment(null);
+    setEditContent('');
+    setEditImages([]);
+  };
+
+  const handleEdit = async () => {
+    if (!editingMoment) return;
+    if (!editContent.trim() && editImages.length === 0) return;
+
+    setIsEditing(true);
+    try {
+      await editMoment(editingMoment, editContent, editImages);
+      closeEditDialog();
+    } catch (error) {
+      console.error('编辑动态失败:', error);
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  const handleDelete = async (momentId: number) => {
+    try {
+      await deleteMoment(momentId);
+    } catch (error) {
+      console.error('删除动态失败:', error);
+    }
   };
 
   return (
@@ -101,7 +185,13 @@ export default function MomentsPage() {
 
         {/* 发布框 */}
         <div className="p-4 bg-white border-b">
-          <div className="flex gap-3">
+          <form
+            className="flex gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handlePublish();
+            }}
+          >
             <Avatar name={user?.nickname || 'U'} color={user?.avatar_color} size="md" />
             <div className="flex-1">
               <Textarea
@@ -144,6 +234,7 @@ export default function MomentsPage() {
                     className="hidden"
                   />
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => fileInputRef.current?.click()}
@@ -153,16 +244,16 @@ export default function MomentsPage() {
                   </Button>
                 </div>
                 <Button
+                  type="submit"
                   size="sm"
                   className="bg-[#12b7f5] hover:bg-[#0aa8e8]"
                   disabled={(!newContent.trim() && selectedImages.length === 0) || isPublishing}
-                  onClick={handlePublish}
                 >
                   {isPublishing ? '发布中...' : '发布'}
                 </Button>
               </div>
             </div>
-          </div>
+          </form>
         </div>
 
         {/* 动态列表 */}
@@ -171,18 +262,62 @@ export default function MomentsPage() {
             <Card key={moment.id} className="overflow-hidden">
               <CardContent className="p-4">
                 {/* 发布者信息 */}
-                <div className="flex items-center gap-3 mb-3">
-                  <Avatar
-                    name={moment.publisher_nickname || '?'}
-                    color={moment.publisher_avatar}
-                    size="md"
-                  />
-                  <div>
-                    <span className="font-medium">{moment.publisher_nickname}</span>
-                    <p className="text-xs text-gray-500">
-                      {formatDistanceToNow(new Date(moment.created_at), { addSuffix: true, locale: zhCN })}
-                    </p>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <Avatar
+                      name={moment.publisher_nickname || '?'}
+                      color={moment.publisher_avatar}
+                      size="md"
+                    />
+                    <div>
+                      <span className="font-medium">{moment.publisher_nickname}</span>
+                      <p className="text-xs text-gray-500">
+                        {formatDistanceToNow(new Date(moment.created_at), { addSuffix: true, locale: zhCN })}
+                      </p>
+                    </div>
                   </div>
+                  {moment.user_id === user?.id && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-gray-500 hover:text-[#12b7f5]"
+                        onClick={() => openEditDialog(moment.id)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-gray-500 hover:text-red-500"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>确认删除</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              确定要删除这条动态吗？此操作不可撤销，相关的评论和点赞也会被删除。
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>取消</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-red-500 hover:bg-red-600"
+                              onClick={() => handleDelete(moment.id)}
+                            >
+                              删除
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )}
                 </div>
 
                 {/* 内容 */}
@@ -283,6 +418,73 @@ export default function MomentsPage() {
           )}
         </div>
       </div>
+
+      {/* 编辑动态对话框 */}
+      <Dialog open={editingMoment !== null} onOpenChange={(open) => { if (!open) closeEditDialog(); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>编辑动态</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder="分享生活点滴..."
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              className="min-h-[100px] resize-none border-gray-200 focus:border-[#12b7f5]"
+            />
+            {editImages.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {editImages.map((url, index) => (
+                  <div key={index} className="relative">
+                    <img
+                      src={url}
+                      alt={`预览 ${index + 1}`}
+                      className="w-20 h-20 object-cover rounded-lg"
+                    />
+                    <button
+                      onClick={() => setEditImages(prev => prev.filter((_, i) => i !== index))}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <div className="flex gap-2">
+                <input
+                  ref={editFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleEditImageSelect}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => editFileInputRef.current?.click()}
+                >
+                  <ImageIcon className="w-4 h-4 mr-1" />
+                  图片
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditDialog}>取消</Button>
+            <Button
+              className="bg-[#12b7f5] hover:bg-[#0aa8e8]"
+              onClick={handleEdit}
+              disabled={(!editContent.trim() && editImages.length === 0) || isEditing}
+            >
+              {isEditing ? '保存中...' : '保存'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 移动端底部导航 */}
       <MobileNav />

@@ -1,6 +1,7 @@
 import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
+import { startScheduler } from './services/scheduler';
 
 const dev = process.env.COZE_PROJECT_ENV !== 'PROD';
 const hostname = process.env.HOSTNAME || 'localhost';
@@ -11,6 +12,11 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
+  // 启动定时任务调度器
+  startScheduler().catch((err) => {
+    console.error('Failed to start scheduler:', err);
+  });
+
   const server = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url!, true);

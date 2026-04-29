@@ -5,6 +5,7 @@ import { Sidebar, MobileNav } from '@/components/sidebar';
 import ChatList from '@/components/chat-list';
 import ChatWindow from '@/components/chat-window';
 import { useAuth } from '@/lib/auth-context';
+import { botApi } from '@/lib/api';
 import { ChevronLeft } from 'lucide-react';
 
 interface ChatTarget {
@@ -18,6 +19,29 @@ export default function AppPage() {
   const { user } = useAuth();
   const [chatTarget, setChatTarget] = useState<ChatTarget | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [botUserId, setBotUserId] = useState<number | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    botApi
+      .getConfig()
+      .then((response) => {
+        if (mounted) {
+          setBotUserId(response.bot?.id ?? null);
+        }
+      })
+      .catch((error) => {
+        console.error('获取管家信息失败:', error);
+        if (mounted) {
+          setBotUserId(null);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleSelectChat = (type: 'private' | 'group', id: number, name: string, avatar?: string) => {
     setChatTarget({ type, id, name, avatar });
@@ -59,6 +83,7 @@ export default function AppPage() {
                 targetName={chatTarget.name}
                 targetAvatar={chatTarget.avatar}
                 onBack={handleBack}
+                isBotConversation={chatTarget.type === 'private' && botUserId !== null && chatTarget.id === botUserId}
               />
             </div>
           </div>
