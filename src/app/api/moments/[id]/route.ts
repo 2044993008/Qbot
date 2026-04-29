@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -19,6 +20,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (!momentId || isNaN(momentId)) {
       return NextResponse.json({ error: '缺少动态ID' }, { status: 400 });
+    }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     const { content, images } = await request.json();
@@ -98,6 +105,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     if (!momentId || isNaN(momentId)) {
       return NextResponse.json({ error: '缺少动态ID' }, { status: 400 });
+    }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     const client = getSupabaseClient();

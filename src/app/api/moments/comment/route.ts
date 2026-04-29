@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 async function getMomentCommentCount(client: ReturnType<typeof getSupabaseClient>, momentId: number): Promise<number> {
   const { count, error } = await client
@@ -22,6 +23,12 @@ export async function POST(request: NextRequest) {
     const payload = await verifyToken(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     const { moment_id, content } = await request.json();

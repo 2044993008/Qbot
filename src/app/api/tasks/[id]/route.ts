@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 import { CronJob } from 'cron';
 
 interface RouteParams {
@@ -57,6 +58,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const taskId = parseInt(resolvedParams.id);
     if (!taskId || isNaN(taskId)) {
       return NextResponse.json({ error: '缺少任务ID' }, { status: 400 });
+    }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     const client = getSupabaseClient();
@@ -125,6 +132,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const taskId = parseInt(resolvedParams.id);
     if (!taskId || isNaN(taskId)) {
       return NextResponse.json({ error: '缺少任务ID' }, { status: 400 });
+    }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     const client = getSupabaseClient();

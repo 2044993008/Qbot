@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
 import { validateBody, updateFriendRemarkSchema } from '@/lib/validation';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -93,6 +94,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (!friendId || isNaN(friendId)) {
       return NextResponse.json({ error: '缺少好友ID' }, { status: 400 });
+    }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     const validated = await validateBody(request, updateFriendRemarkSchema);
