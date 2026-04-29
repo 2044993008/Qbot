@@ -11,7 +11,7 @@ import { generateCsrfToken } from '@/lib/csrf';
 export async function POST(request: NextRequest) {
   // 注册接口限流：3次/小时/IP
   const limit = rateLimitMiddleware({ maxRequests: 3, windowMs: 60 * 60 * 1000, keyPrefix: 'register' });
-  const limitResult = limit(request);
+  const limitResult = await limit(request);
   if (!limitResult.allowed) {
     return NextResponse.json({ error: '注册次数过多，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limitResult.retryAfter) } });
   }

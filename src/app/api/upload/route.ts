@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 上传限流：10次/分钟/用户
-    const limit = checkUserRateLimit(payload.userId, { maxRequests: 10, windowMs: 60 * 1000, keyPrefix: 'upload' });
+    const limit = await checkUserRateLimit(payload.userId, { maxRequests: 10, windowMs: 60 * 1000, keyPrefix: 'upload' });
     if (!limit.allowed) {
       return NextResponse.json({ error: '上传过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
     }

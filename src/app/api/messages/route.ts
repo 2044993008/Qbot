@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 消息发送限流：30条/分钟/用户
-    const limit = checkUserRateLimit(payload.userId, { maxRequests: 30, windowMs: 60 * 1000, keyPrefix: 'msg_send' });
+    const limit = await checkUserRateLimit(payload.userId, { maxRequests: 30, windowMs: 60 * 1000, keyPrefix: 'msg_send' });
     if (!limit.allowed) {
       return NextResponse.json({ error: '发送消息过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
     }

@@ -2150,7 +2150,7 @@ export async function POST(request: NextRequest) {
     const userMessage = message.trim();
 
     // 【用户级限流】
-    const rateLimit = checkUserRateLimit(payload.userId, { maxRequests: 30, windowMs: 60 * 1000, keyPrefix: 'bot' });
+    const rateLimit = await checkUserRateLimit(payload.userId, { maxRequests: 30, windowMs: 60 * 1000, keyPrefix: 'bot' });
     if (!rateLimit.allowed) {
       return NextResponse.json({
         response: `请求太频繁啦，请 ${rateLimit.resetIn} 秒后再试~`,

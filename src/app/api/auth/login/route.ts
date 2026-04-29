@@ -11,7 +11,7 @@ import { generateCsrfToken } from '@/lib/csrf';
 export async function POST(request: NextRequest) {
   // 登录接口限流：5次/分钟/IP
   const limit = rateLimitMiddleware({ maxRequests: 5, windowMs: 60 * 1000, keyPrefix: 'login' });
-  const limitResult = limit(request);
+  const limitResult = await limit(request);
   if (!limitResult.allowed) {
     return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limitResult.retryAfter) } });
   }

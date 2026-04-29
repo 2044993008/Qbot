@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 发布动态限流：10条/小时/用户
-    const limit = checkUserRateLimit(payload.userId, { maxRequests: 10, windowMs: 60 * 60 * 1000, keyPrefix: 'moment_post' });
+    const limit = await checkUserRateLimit(payload.userId, { maxRequests: 10, windowMs: 60 * 60 * 1000, keyPrefix: 'moment_post' });
     if (!limit.allowed) {
       return NextResponse.json({ error: '发布动态过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
     }
