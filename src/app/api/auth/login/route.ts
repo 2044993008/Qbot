@@ -3,9 +3,17 @@ import bcrypt from 'bcryptjs';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { cookies } from 'next/headers';
 import { generateToken, verifyToken } from '@/lib/auth-utils';
+import { rateLimitMiddleware } from '@/lib/rate-limit';
 
 // POST - 登录
 export async function POST(request: NextRequest) {
+  // 登录接口限流：5次/分钟/IP
+  const limit = rateLimitMiddleware({ maxRequests: 5, windowMs: 60 * 1000, keyPrefix: 'login' });
+  const limitResult = limit(request);
+  if (!limitResult.allowed) {
+    return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limitResult.retryAfter) } });
+  }
+
   try {
     const { qq_number, password } = await request.json();
     
@@ -26,27 +34,10 @@ export async function POST(request: NextRequest) {
     }
 
     const storedPassword = data.password;
-    const isHashedPassword = /^\$2[aby]\$/.test(storedPassword);
-    const isPasswordValid = isHashedPassword
-      ? await bcrypt.compare(password, storedPassword)
-      : storedPassword === password;
+    const isPasswordValid = await bcrypt.compare(password, storedPassword);
 
     if (!isPasswordValid) {
       return NextResponse.json({ error: '密码错误' }, { status: 401 });
-    }
-
-    if (!isHashedPassword) {
-      const passwordHash = await bcrypt.hash(password, 12);
-      const { error: updatePasswordError } = await client
-        .from('users')
-        .update({ password: passwordHash })
-        .eq('id', data.id);
-
-      if (updatePasswordError) {
-        throw new Error(`升级密码失败: ${updatePasswordError.message}`);
-      }
-
-      data.password = passwordHash;
     }
 
     // 更新在线状态
@@ -55,7 +46,7 @@ export async function POST(request: NextRequest) {
       last_seen: new Date().toISOString()
     }).eq('id', data.id);
 
-    const token = generateToken(data.id, data.qq_number);
+    const token = await generateToken(data.id, data.qq_number);
     
     // 设置 cookie
     const cookieStore = await cookies();

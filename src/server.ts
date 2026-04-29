@@ -43,13 +43,13 @@ app.prepare().then(() => {
   // 存储 io 实例供 API routes 使用
   (globalThis as typeof globalThis & { io: typeof io }).io = io;
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token as string;
       if (!token) {
         return next(new Error('Authentication error: no token'));
       }
-      const payload = verifyTokenString(token);
+      const payload = await verifyTokenString(token);
       if (!payload) {
         return next(new Error('Authentication error: invalid token'));
       }

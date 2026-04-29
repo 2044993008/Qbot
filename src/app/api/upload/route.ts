@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { getSupabaseClient as getStorageClient } from '@/storage/database/supabase-client';
+import { checkUserRateLimit } from '@/lib/rate-limit';
 
 
 // POST - 上传图片
@@ -10,6 +11,12 @@ export async function POST(request: NextRequest) {
     const payload = await verifyToken(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
+    // 上传限流：10次/分钟/用户
+    const limit = checkUserRateLimit(payload.userId, { maxRequests: 10, windowMs: 60 * 1000, keyPrefix: 'upload' });
+    if (!limit.allowed) {
+      return NextResponse.json({ error: '上传过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
     }
 
     const formData = await request.formData();

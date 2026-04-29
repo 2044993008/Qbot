@@ -3,9 +3,17 @@ import bcrypt from 'bcryptjs';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { cookies } from 'next/headers';
 import { generateToken } from '@/lib/auth-utils';
+import { rateLimitMiddleware } from '@/lib/rate-limit';
 
 // POST - 注册
 export async function POST(request: NextRequest) {
+  // 注册接口限流：3次/小时/IP
+  const limit = rateLimitMiddleware({ maxRequests: 3, windowMs: 60 * 60 * 1000, keyPrefix: 'register' });
+  const limitResult = limit(request);
+  if (!limitResult.allowed) {
+    return NextResponse.json({ error: '注册次数过多，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limitResult.retryAfter) } });
+  }
+
   try {
     const { qq_number, nickname, password } = await request.json();
     
@@ -56,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     if (error) throw new Error(`创建用户失败: ${error.message}`);
 
-    const token = generateToken(data.id, data.qq_number);
+    const token = await generateToken(data.id, data.qq_number);
     
     // 设置 cookie
     const cookieStore = await cookies();

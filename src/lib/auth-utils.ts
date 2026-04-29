@@ -1,31 +1,31 @@
 import { NextRequest } from 'next/server';
-import { createHmac } from 'crypto';
+import { SignJWT, jwtVerify } from 'jose';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 
-// JWT Secret Key - 实际生产环境应使用环境变量
-const JWT_SECRET = process.env.JWT_SECRET || 'qq-chat-secret-key-change-in-production';
-const TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7天
-
-// 创建 HMAC-SHA256 签名
-function createSignature(data: string): string {
-  return createHmac('sha256', JWT_SECRET).update(data).digest('hex');
+// JWT Secret - 必须从环境变量读取，生产环境强制要求配置
+function getJwtSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('JWT_SECRET environment variable is required in production');
+    }
+    // 开发环境如果未配置，给一个一次性警告并继续（不应部署到生产）
+    console.warn('[SECURITY] JWT_SECRET not set, using insecure development fallback. DO NOT deploy to production without setting JWT_SECRET!');
+  }
+  const encoder = new TextEncoder();
+  return encoder.encode(secret || 'qq-chat-dev-secret-only');
 }
 
-// 生成 JWT token
-export function generateToken(userId: number, qqNumber: string): string {
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const payload = {
-    userId,
-    qqNumber,
-    iat: Date.now(),
-    exp: Date.now() + TOKEN_EXPIRY,
-  };
+const TOKEN_EXPIRY = '7d'; // 7天
 
-  const headerEncoded = Buffer.from(JSON.stringify(header)).toString('base64url');
-  const payloadEncoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = createSignature(`${headerEncoded}.${payloadEncoded}`);
-
-  return `${headerEncoded}.${payloadEncoded}.${signature}`;
+// 生成 JWT token (使用 jose 库)
+export async function generateToken(userId: number, qqNumber: string): Promise<string> {
+  const secret = getJwtSecret();
+  return new SignJWT({ userId, qqNumber })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(TOKEN_EXPIRY)
+    .sign(secret);
 }
 
 // 验证 token（支持 Cookie 和 Authorization header）
@@ -44,55 +44,43 @@ export async function verifyToken(request: NextRequest) {
   if (!token) return null;
 
   try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
+    const secret = getJwtSecret();
+    const { payload } = await jwtVerify(token, secret, {
+      clockTolerance: 60, // 允许60秒时钟偏移
+    });
 
-    const [headerEncoded, payloadEncoded, signature] = parts;
+    const userId = payload.userId as number;
+    const qqNumber = payload.qqNumber as string;
 
-    // 验证签名
-    const expectedSignature = createSignature(`${headerEncoded}.${payloadEncoded}`);
-    if (signature !== expectedSignature) {
-      console.error('Token signature verification failed');
+    if (typeof userId !== 'number' || typeof qqNumber !== 'string') {
       return null;
     }
 
-    const payload = JSON.parse(Buffer.from(payloadEncoded, 'base64url').toString());
-
-    // 检查过期
-    if (payload.exp && Date.now() > payload.exp) {
-      console.error('Token expired');
-      return null;
-    }
-
-    return { userId: payload.userId, qqNumber: payload.qqNumber };
-  } catch (error) {
-    console.error('Token verification error:', error);
+    return { userId, qqNumber };
+  } catch {
+    // 验证失败（过期或签名错误）
     return null;
   }
 }
 
 // 验证 token string（用于 Socket.IO 等非 HTTP 场景）
-export function verifyTokenString(token: string): { userId: number; qqNumber: string } | null {
+export async function verifyTokenString(token: string): Promise<{ userId: number; qqNumber: string } | null> {
   if (!token) return null;
 
   try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
+    const secret = getJwtSecret();
+    const { payload } = await jwtVerify(token, secret, {
+      clockTolerance: 60,
+    });
 
-    const [headerEncoded, payloadEncoded, signature] = parts;
+    const userId = payload.userId as number;
+    const qqNumber = payload.qqNumber as string;
 
-    const expectedSignature = createSignature(`${headerEncoded}.${payloadEncoded}`);
-    if (signature !== expectedSignature) {
+    if (typeof userId !== 'number' || typeof qqNumber !== 'string') {
       return null;
     }
 
-    const payload = JSON.parse(Buffer.from(payloadEncoded, 'base64url').toString());
-
-    if (payload.exp && Date.now() > payload.exp) {
-      return null;
-    }
-
-    return { userId: payload.userId, qqNumber: payload.qqNumber };
+    return { userId, qqNumber };
   } catch {
     return null;
   }

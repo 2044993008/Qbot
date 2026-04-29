@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
+import { checkUserRateLimit } from '@/lib/rate-limit';
 
 // ============================================
 // OpenAI 兼容 LLM 客户端
@@ -47,16 +48,6 @@ interface UserRequestLock {
 // 用户级请求队列：同一用户串行处理，防止并发冲突
 const userRequestLocks = new Map<number, UserRequestLock>();
 
-// 用户级限流：记录每个用户的请求次数和时间窗口
-interface RateLimitInfo {
-  count: number;
-  windowStart: number;
-}
-const userRateLimits = new Map<number, RateLimitInfo>();
-
-const RATE_LIMIT_MAX = 30; // 每窗口最多请求数
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1分钟窗口
-
 // 获取用户请求锁（确保同一用户串行处理）
 async function acquireUserLock<T>(userId: number, fn: () => Promise<T>): Promise<T> {
   while (userRequestLocks.has(userId)) {
@@ -82,32 +73,6 @@ async function acquireUserLock<T>(userId: number, fn: () => Promise<T>): Promise
   } finally {
     userRequestLocks.delete(userId);
   }
-}
-
-// 检查用户限流
-function checkRateLimit(userId: number): { allowed: boolean; remaining: number; resetIn: number } {
-  const now = Date.now();
-  let info = userRateLimits.get(userId);
-
-  if (!info || now - info.windowStart > RATE_LIMIT_WINDOW_MS) {
-    info = { count: 0, windowStart: now };
-    userRateLimits.set(userId, info);
-  }
-
-  if (info.count >= RATE_LIMIT_MAX) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetIn: Math.ceil((info.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000),
-    };
-  }
-
-  info.count++;
-  return {
-    allowed: true,
-    remaining: RATE_LIMIT_MAX - info.count,
-    resetIn: Math.ceil((info.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000),
-  };
 }
 
 async function callOpenAICompatible(
@@ -2179,12 +2144,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 【用户级限流】
-    const rateLimit = checkRateLimit(payload.userId);
+    const rateLimit = checkUserRateLimit(payload.userId, { maxRequests: 30, windowMs: 60 * 1000, keyPrefix: 'bot' });
     if (!rateLimit.allowed) {
       return NextResponse.json({
         response: `请求太频繁啦，请 ${rateLimit.resetIn} 秒后再试~`,
         type: 'text',
-      }, { status: 429 });
+      }, { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } });
     }
 
     // 初始化审计日志
