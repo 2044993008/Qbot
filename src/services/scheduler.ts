@@ -1,5 +1,6 @@
 import { CronJob } from 'cron';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { logger } from '@/lib/logger';
 
 interface ScheduledTask {
   id: number;
@@ -19,18 +20,18 @@ const activeJobs = new Map<number, { job: CronJob; expression: string }>();
 let reloadInterval: NodeJS.Timeout | null = null;
 
 export async function startScheduler() {
-  console.log('[Scheduler] Starting scheduled task system...');
+  logger.info('[Scheduler] Starting scheduled task system...');
   await reloadTasks();
 
   if (!reloadInterval) {
     reloadInterval = setInterval(() => {
       reloadTasks().catch((err) => {
-        console.error('[Scheduler] Periodic reload failed:', err);
+        logger.error('[Scheduler] Periodic reload failed', { error: String(err) });
       });
     }, 60000);
   }
 
-  console.log('[Scheduler] Started successfully');
+  logger.info('[Scheduler] Started successfully');
 }
 
 export function stopScheduler() {
@@ -42,7 +43,7 @@ export function stopScheduler() {
     job.stop();
   }
   activeJobs.clear();
-  console.log('[Scheduler] Stopped');
+  logger.info('[Scheduler] Stopped');
 }
 
 async function reloadTasks() {
@@ -53,7 +54,7 @@ async function reloadTasks() {
     .eq('enabled', true);
 
   if (error) {
-    console.error('[Scheduler] Failed to load tasks:', error.message);
+    logger.error('[Scheduler] Failed to load tasks', { error: error.message });
     return;
   }
 
@@ -87,7 +88,7 @@ async function reloadTasks() {
       );
       activeJobs.set(task.id, { job, expression: task.cron_expression });
     } catch (err) {
-      console.error(`[Scheduler] Failed to create cron job for task ${task.id}:`, err);
+      logger.error(`[Scheduler] Failed to create cron job for task ${task.id}`, { error: String(err) });
     }
   }
 }
@@ -113,7 +114,7 @@ export async function executeTask(task: ScheduledTask | Record<string, unknown>)
     .single();
 
   if (logError) {
-    console.error(`[Scheduler] Failed to create execution log for task ${t.id}:`, logError.message);
+    logger.error(`[Scheduler] Failed to create execution log for task ${t.id}`, { error: logError.message });
   }
 
   const logId = logEntry?.id;
@@ -151,7 +152,7 @@ export async function executeTask(task: ScheduledTask | Record<string, unknown>)
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    console.error(`[Scheduler] Task ${t.id} execution failed:`, errorMessage);
+    logger.error(`[Scheduler] Task ${t.id} execution failed`, { error: errorMessage });
     result = { success: false, error: errorMessage };
 
     // 更新日志为失败
@@ -180,7 +181,7 @@ export async function executeTask(task: ScheduledTask | Record<string, unknown>)
       })
       .eq('id', t.id);
   } catch (err) {
-    console.error(`[Scheduler] Failed to update task ${t.id} timestamps:`, err);
+    logger.error(`[Scheduler] Failed to update task ${t.id} timestamps`, { error: String(err) });
   }
 
   return result;

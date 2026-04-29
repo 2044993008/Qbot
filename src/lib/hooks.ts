@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import type { Conversation, Friend, Group, GroupMember, Message, Moment, ScheduledTask } from '@/lib/types';
 import { conversationsApi, friendsApi, groupsApi, messagesApi, momentsApi, tasksApi } from '@/lib/api';
 import { joinConversation, leaveConversation, onNewMessage, offNewMessage } from '@/lib/socket-client';
+import { logger } from '@/lib/logger';
 
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -16,7 +17,7 @@ export function useConversations() {
         const response = await conversationsApi.getList();
         setConversations(response.conversations || []);
       } catch (error) {
-        console.error('获取会话列表失败:', error);
+        logger.error('获取会话列表失败', { error: String(error) });
       } finally {
         setIsLoading(false);
       }
@@ -30,7 +31,7 @@ export function useConversations() {
         await fetchConversations();
         return response.conversation;
       } catch (error) {
-        console.error('创建会话失败:', error);
+        logger.error('创建会话失败:', { error: String(error) });
         return null;
       }
     })();
@@ -55,7 +56,7 @@ export function useFriends() {
         const response = await friendsApi.getList();
         setFriends(response.friends || []);
       } catch (error) {
-        console.error('获取好友列表失败:', error);
+        logger.error('获取好友列表失败:', { error: String(error) });
       } finally {
         setIsLoading(false);
       }
@@ -80,7 +81,7 @@ export function useGroups() {
         const response = await groupsApi.getList();
         setGroups(response.groups || []);
       } catch (error) {
-        console.error('获取群列表失败:', error);
+        logger.error('获取群列表失�?', { error: String(error) });
       } finally {
         setIsLoading(false);
       }
@@ -93,7 +94,7 @@ export function useGroups() {
         const response = await groupsApi.getMembers(groupId);
         return response.members || [];
       } catch (error) {
-        console.error('获取群成员失败:', error);
+        logger.error('获取群成员失�?', { error: String(error) });
         return [];
       }
     })();
@@ -120,7 +121,7 @@ export function useMessages(conversationId: number | null) {
         const response = await messagesApi.getList(conversationId);
         setMessages(response.messages || []);
       } catch (error) {
-        console.error('获取消息列表失败:', error);
+        logger.error('获取消息列表失败:', { error: String(error) });
       } finally {
         setIsLoading(false);
       }
@@ -172,7 +173,7 @@ export function useMessages(conversationId: number | null) {
         }
         return response.message;
       } catch (error) {
-        console.error('发送消息失败:', error);
+        logger.error('发送消息失�?', { error: String(error) });
         return null;
       }
     })();
@@ -198,7 +199,7 @@ export function useMoments(userId?: number) {
         const response = await momentsApi.getList(userId);
         setMoments(response.moments || []);
       } catch (error) {
-        console.error('获取动态列表失败:', error);
+        logger.error('获取动态列表失�?', { error: String(error) });
       } finally {
         setIsLoading(false);
       }
@@ -214,7 +215,7 @@ export function useMoments(userId?: number) {
         }
         return response.moment;
       } catch (error) {
-        console.error('发布动态失败:', error);
+        logger.error('发布动态失�?', { error: String(error) });
         throw error;
       }
     })();
@@ -230,7 +231,7 @@ export function useMoments(userId?: number) {
             : m
         ));
       } catch (error) {
-        console.error('点赞失败:', error);
+        logger.error('点赞失败:', { error: String(error) });
       }
     })();
   }, []);
@@ -248,7 +249,7 @@ export function useMoments(userId?: number) {
         }
         return response.comment;
       } catch (error) {
-        console.error('评论失败:', error);
+        logger.error('评论失败:', { error: String(error) });
         throw error;
       }
     })();
@@ -267,7 +268,7 @@ export function useMoments(userId?: number) {
         }
         return response.moment;
       } catch (error) {
-        console.error('编辑动态失败:', error);
+        logger.error('编辑动态失�?', { error: String(error) });
         throw error;
       }
     })();
@@ -279,7 +280,7 @@ export function useMoments(userId?: number) {
         await momentsApi.delete(momentId);
         setMoments(prev => prev.filter(m => m.id !== momentId));
       } catch (error) {
-        console.error('删除动态失败:', error);
+        logger.error('删除动态失�?', { error: String(error) });
         throw error;
       }
     })();
@@ -308,7 +309,7 @@ export function useTasks() {
         const response = await tasksApi.getList();
         setTasks(response.tasks || []);
       } catch (error) {
-        console.error('获取定时任务列表失败:', error);
+        logger.error('获取定时任务列表失败:', { error: String(error) });
       } finally {
         setIsLoading(false);
       }
@@ -324,7 +325,7 @@ export function useTasks() {
         }
         return response.task;
       } catch (error) {
-        console.error('创建定时任务失败:', error);
+        logger.error('创建定时任务失败:', { error: String(error) });
         throw error;
       }
     })();
@@ -339,7 +340,7 @@ export function useTasks() {
         }
         return response.task;
       } catch (error) {
-        console.error('更新定时任务失败:', error);
+        logger.error('更新定时任务失败:', { error: String(error) });
         throw error;
       }
     })();
@@ -351,7 +352,7 @@ export function useTasks() {
         await tasksApi.delete(id);
         setTasks(prev => prev.filter(t => t.id !== id));
       } catch (error) {
-        console.error('删除定时任务失败:', error);
+        logger.error('删除定时任务失败:', { error: String(error) });
         throw error;
       }
     })();
