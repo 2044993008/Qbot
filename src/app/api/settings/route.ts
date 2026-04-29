@@ -2,6 +2,52 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 
+async function saveUserSetting(userId: number, key: string, value: string) {
+  const client = getSupabaseClient();
+
+  const { data: existing, error: queryError } = await client
+    .from('user_settings')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('key', key)
+    .order('id', { ascending: true })
+    .limit(1);
+
+  if (queryError) {
+    throw new Error(`查询设置失败: ${queryError.message}`);
+  }
+
+  const updatedAt = new Date().toISOString();
+  const existingId = existing?.[0]?.id;
+
+  if (existingId) {
+    const { data, error } = await client
+      .from('user_settings')
+      .update({ value, updated_at: updatedAt })
+      .eq('id', existingId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`更新设置失败: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  const { data, error } = await client
+    .from('user_settings')
+    .insert({ user_id: userId, key, value, updated_at: updatedAt })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`创建设置失败: ${error.message}`);
+  }
+
+  return data;
+}
+
 
 // GET - 获取用户设置
 export async function GET(request: NextRequest) {
@@ -58,20 +104,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: '缺少设置键' }, { status: 400 });
     }
 
-    const client = getSupabaseClient();
-    
-    const { data, error } = await client
-      .from('user_settings')
-      .upsert({
-        user_id: payload.userId,
-        key,
-        value: value || '',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,key' })
-      .select()
-      .single();
-
-    if (error) throw new Error(`更新设置失败: ${error.message}`);
+    const data = await saveUserSetting(payload.userId, key, value || '');
 
     return NextResponse.json({ success: true, setting: data });
   } catch (err) {

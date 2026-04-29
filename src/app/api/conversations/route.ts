@@ -30,15 +30,16 @@ export async function GET(request: NextRequest) {
     const privateConv = conversations.filter(c => c.type === 'private');
     const groupConv = conversations.filter(c => c.type === 'group');
 
-    let targets: { id: number; nickname?: string; name?: string; avatar_color?: string; status?: string }[] = [];
-    
+    let privateTargets: { id: number; nickname?: string; avatar_color?: string; status?: string }[] = [];
+    let groupTargets: { id: number; name?: string; avatar_color?: string }[] = [];
+
     if (privateConv.length > 0) {
       const userIds = privateConv.map(c => c.target_id);
       const { data: users } = await client
         .from('users')
         .select('id, nickname, avatar_color, status')
         .in('id', userIds);
-      targets = [...targets, ...(users || [])];
+      privateTargets = users || [];
     }
 
     if (groupConv.length > 0) {
@@ -47,17 +48,27 @@ export async function GET(request: NextRequest) {
         .from('groups')
         .select('id, name, avatar_color')
         .in('id', groupIds);
-      targets = [...targets, ...(groups || [])];
+      groupTargets = groups || [];
     }
 
     // 合并数据
     const conversationsWithTargets = conversations.map(conv => {
-      const target = targets.find(t => t.id === conv.target_id);
+      if (conv.type === 'private') {
+        const target = privateTargets.find(t => t.id === conv.target_id);
+        return {
+          ...conv,
+          target_name: target?.nickname || '未知',
+          target_avatar: target?.avatar_color || '#666',
+          target_status: target?.status,
+        };
+      }
+
+      const target = groupTargets.find(t => t.id === conv.target_id);
       return {
         ...conv,
-        target_name: target?.nickname || target?.name || '未知',
+        target_name: target?.name || '未知',
         target_avatar: target?.avatar_color || '#666',
-        target_status: target?.status,
+        target_status: undefined,
       };
     });
 

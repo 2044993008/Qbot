@@ -38,7 +38,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // 获取好友关系中的备注
     const { data: relation } = await client
       .from('friends')
-      .select('remark')
+      .select('remark, created_at')
       .eq('user_id', payload.userId)
       .eq('friend_id', friendId)
       .maybeSingle();
@@ -69,6 +69,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         ...friend,
         remark: relation?.remark || null,
         conversation_id: conversations?.id || null,
+        friendship_created_at: relation?.created_at || null,
       },
       recentMessages,
     });

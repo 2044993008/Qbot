@@ -26,10 +26,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // 获取会话详情
     const { data: conversation, error } = await client
       .from('conversations')
-      .select(`
-        *,
-        group:groups(*)
-      `)
+      .select('*')
       .eq('id', conversationId)
       .eq('user_id', payload.userId)
       .single();

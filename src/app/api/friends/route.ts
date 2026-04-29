@@ -34,10 +34,10 @@ export async function GET(request: NextRequest) {
 
     if (usersError) throw new Error(`查询用户详情失败: ${usersError.message}`);
 
-    // 合并数据，使用 friends.created_at 作为添加时间
+    // 合并数据，使用统一字段 friendship_created_at 表示添加时间
     const friendsWithDetails = friends.map(f => {
       const user = users?.find(u => u.id === f.friend_id);
-      return user ? { ...user, remark: f.remark, friend_since: f.created_at } : null;
+      return user ? { ...user, remark: f.remark, friendship_created_at: f.created_at } : null;
     }).filter(Boolean);
 
     return NextResponse.json({ friends: friendsWithDetails });

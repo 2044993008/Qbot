@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { cookies } from 'next/headers';
-import { generateToken, decodeToken } from '@/lib/auth-utils';
+import { generateToken, verifyToken } from '@/lib/auth-utils';
 
 // POST - 登录
 export async function POST(request: NextRequest) {
@@ -88,13 +88,8 @@ export async function POST(request: NextRequest) {
 // GET - 验证 token
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get('qq_token')?.value;
-    
-    if (!token) {
-      return NextResponse.json({ authenticated: false }, { status: 401 });
-    }
+    const payload = await verifyToken(request);
 
-    const payload = decodeToken(token);
     if (!payload) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
     }
