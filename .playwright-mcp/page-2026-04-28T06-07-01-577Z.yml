@@ -1,0 +1,90 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e11] [cursor=pointer]:
+    - img [ref=e12]
+  - alert [ref=e15]
+  - generic [ref=e16]:
+    - generic [ref=e18]:
+      - generic [ref=e20]:
+        - generic [ref=e22]: D
+        - generic [ref=e23]:
+          - generic [ref=e24]: DemoUser
+          - generic [ref=e25]: QQ 10001
+        - button [ref=e26]:
+          - img [ref=e27]
+      - generic [ref=e31]:
+        - img [ref=e32]
+        - textbox "搜索" [ref=e35]
+      - navigation [ref=e36]:
+        - link "消息" [ref=e37] [cursor=pointer]:
+          - /url: /app
+          - img [ref=e38]
+          - generic [ref=e40]: 消息
+        - link "联系人" [ref=e41] [cursor=pointer]:
+          - /url: /app/friends
+          - img [ref=e42]
+          - generic [ref=e47]: 联系人
+        - link "空间" [ref=e48] [cursor=pointer]:
+          - /url: /app/moments
+          - img [ref=e49]
+          - generic [ref=e53]: 空间
+        - link "我的" [ref=e54] [cursor=pointer]:
+          - /url: /app/profile
+          - img [ref=e55]
+          - generic [ref=e58]: 我的
+    - generic [ref=e59]:
+      - generic [ref=e61]:
+        - img [ref=e62]
+        - textbox "搜索好友" [ref=e65]
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - heading "智能助手" [level=3] [ref=e68]
+          - generic [ref=e69] [cursor=pointer]:
+            - generic [ref=e71]: 小
+            - generic [ref=e73]:
+              - generic [ref=e74]:
+                - generic [ref=e75]: 小 Q 管家
+                - generic [ref=e76]: AI
+              - paragraph [ref=e77]: 有事叫我
+            - button [ref=e78]:
+              - img
+        - generic [ref=e79]:
+          - heading "在线好友 (3)" [level=3] [ref=e80]
+          - generic [ref=e81] [cursor=pointer]:
+            - generic [ref=e83]: 陈
+            - generic [ref=e85]:
+              - generic [ref=e87]: 陈伟
+              - paragraph [ref=e88]: 接口别拍脑袋改
+            - button [ref=e89]:
+              - img
+          - generic [ref=e90] [cursor=pointer]:
+            - generic [ref=e92]: 赵
+            - generic [ref=e94]:
+              - generic [ref=e96]: 赵敏
+              - paragraph [ref=e97]: 测试环境先别动
+            - button [ref=e98]:
+              - img
+          - generic [ref=e99] [cursor=pointer]:
+            - generic [ref=e101]: 班
+            - generic [ref=e103]:
+              - generic [ref=e105]: 班长小明
+              - paragraph [ref=e106]: 下课先去食堂占位
+            - button [ref=e107]:
+              - img
+        - generic [ref=e108]:
+          - heading "忙碌 (1)" [level=3] [ref=e109]
+          - generic [ref=e110] [cursor=pointer]:
+            - generic [ref=e112]: 刘
+            - generic [ref=e114]:
+              - generic [ref=e116]: 刘芳
+              - paragraph [ref=e117]: 周末想去拍照
+            - button [ref=e118]:
+              - img
+        - generic [ref=e119]:
+          - heading "离线好友 (1)" [level=3] [ref=e120]
+          - generic [ref=e121] [cursor=pointer]:
+            - generic [ref=e123]: 李
+            - generic [ref=e125]:
+              - generic [ref=e127]: 李华
+              - paragraph [ref=e128]: 今晚图书馆见
+            - button [ref=e129]:
+              - img

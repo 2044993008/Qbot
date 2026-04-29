@@ -1,0 +1,114 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e11] [cursor=pointer]:
+    - img [ref=e12]
+  - alert [ref=e15]
+  - generic [ref=e16]:
+    - generic [ref=e18]:
+      - generic [ref=e20]:
+        - generic [ref=e22]: D
+        - generic [ref=e23]:
+          - generic [ref=e24]: DemoUser
+          - generic [ref=e25]: QQ 10001
+        - button [ref=e26]:
+          - img [ref=e27]
+      - generic [ref=e31]:
+        - img [ref=e32]
+        - textbox "搜索" [ref=e35]
+      - navigation [ref=e36]:
+        - link "消息" [ref=e37] [cursor=pointer]:
+          - /url: /app
+          - img [ref=e38]
+          - generic [ref=e40]: 消息
+        - link "联系人" [ref=e41] [cursor=pointer]:
+          - /url: /app/friends
+          - img [ref=e42]
+          - generic [ref=e47]: 联系人
+        - link "空间" [ref=e48] [cursor=pointer]:
+          - /url: /app/moments
+          - img [ref=e49]
+          - generic [ref=e53]: 空间
+        - link "我的" [ref=e54] [cursor=pointer]:
+          - /url: /app/profile
+          - img [ref=e55]
+          - generic [ref=e58]: 我的
+    - generic [ref=e62]:
+      - generic [ref=e64]:
+        - img [ref=e65]
+        - textbox "搜索" [ref=e68]
+      - generic [ref=e69]:
+        - button "聊天" [ref=e70]
+        - button "好友" [ref=e71]
+        - button "群聊" [ref=e72]
+      - generic [ref=e74]:
+        - generic [ref=e75] [cursor=pointer]:
+          - generic [ref=e77]: 小
+          - generic [ref=e79]:
+            - generic [ref=e80]:
+              - generic [ref=e81]: 小 Q 管家
+              - generic [ref=e82]: 大约 1 小时
+            - paragraph [ref=e83]: 你好，帮我总结今天的聊天重点
+          - text: "0"
+        - generic [ref=e84] [cursor=pointer]:
+          - generic [ref=e86]: 前
+          - generic [ref=e87]:
+            - generic [ref=e88]:
+              - generic [ref=e89]: 前端开发交流群
+              - generic [ref=e90]: 大约 21 小时
+            - paragraph [ref=e91]: 是，能看出上下文比数量更重要。
+          - text: "0"
+        - generic [ref=e92] [cursor=pointer]:
+          - generic [ref=e94]: 周
+          - generic [ref=e95]:
+            - generic [ref=e96]:
+              - generic [ref=e97]: 周末出游搭子群
+              - generic [ref=e98]: 1 天
+            - paragraph [ref=e99]: 也行，室内更省心。
+          - text: "0"
+        - generic [ref=e100] [cursor=pointer]:
+          - generic [ref=e102]: 张
+          - generic [ref=e104]:
+            - generic [ref=e105]:
+              - generic [ref=e106]: 张小明
+              - generic [ref=e107]: 1 天
+            - paragraph [ref=e108]: 班长刚在群里发了补交名单，你不在里面，稳了。
+          - text: "0"
+        - generic [ref=e109] [cursor=pointer]:
+          - generic [ref=e111]: 李
+          - generic [ref=e113]:
+            - generic [ref=e114]:
+              - generic [ref=e115]: 李华
+              - generic [ref=e116]: 1 天
+            - paragraph [ref=e117]: 你上次说的那道题我终于懂了，原来卡在边界条件。
+          - text: "0"
+        - generic [ref=e118] [cursor=pointer]:
+          - generic [ref=e120]: 计
+          - generic [ref=e121]:
+            - generic [ref=e122]:
+              - generic [ref=e123]: 计算机2103班群
+              - generic [ref=e124]: 2 天
+            - paragraph [ref=e125]: 对，姓名和学号别漏。
+          - text: "0"
+        - generic [ref=e126] [cursor=pointer]:
+          - generic [ref=e128]: 刘
+          - generic [ref=e130]:
+            - generic [ref=e131]:
+              - generic [ref=e132]: 刘芳
+              - generic [ref=e133]: 3 天
+            - paragraph [ref=e134]: 哈哈你满意就行，我明天把原图打包发你。
+          - text: "0"
+        - generic [ref=e135] [cursor=pointer]:
+          - generic [ref=e137]: 陈
+          - generic [ref=e139]:
+            - generic [ref=e140]:
+              - generic [ref=e141]: 陈伟
+              - generic [ref=e142]: 4 天
+            - paragraph [ref=e143]: 对，我刚改完，已经正常了。
+          - text: "0"
+        - generic [ref=e144] [cursor=pointer]:
+          - generic [ref=e146]: 赵
+          - generic [ref=e148]:
+            - generic [ref=e149]:
+              - generic [ref=e150]: 赵敏
+              - generic [ref=e151]: 5 天
+            - paragraph [ref=e152]: 支持，之前那批文案一看就不像真人。
+          - text: "0"

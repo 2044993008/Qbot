@@ -16,6 +16,8 @@ async function login(page: any) {
 test.describe('Chat', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    // 等待会话列表加载
+    await page.waitForSelector('[data-testid="conversation-item"]', { timeout: 10000 });
   });
 
   test('should send a text message', async ({ page }) => {
@@ -38,8 +40,8 @@ test.describe('Chat', () => {
     const page1 = await context1.newPage();
     const page2 = await context2.newPage();
 
-    // 用户1登录
     await login(page1);
+    await page1.waitForSelector('[data-testid="conversation-item"]', { timeout: 10000 });
 
     // 用户2登录（用不同账号或同一账号不同会话）
     await page2.goto('/login');

@@ -37,10 +37,14 @@ async function hasBotResponse(page: any, timeout = 20000) {
   }
 }
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('AI Butler - Complex Multi-Step Instructions', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
   });
+
+  test.describe.configure({ timeout: 90000 });
 
   test('TC1: 润色 + 发给小王 + 表情包 + 发空间', async ({ page }) => {
     const cmd = '帮我把今天疯狂星期四v我50这句话润色一下，发给小王再带个表情包，再发个空间';

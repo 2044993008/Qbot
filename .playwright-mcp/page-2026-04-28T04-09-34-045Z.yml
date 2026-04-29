@@ -1,0 +1,32 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e39] [cursor=pointer]:
+    - img [ref=e40]
+  - alert [ref=e6]
+  - generic [ref=e8]:
+    - generic [ref=e9]:
+      - generic [ref=e11]: Q
+      - heading "仿 QQ" [level=1] [ref=e12]
+      - paragraph [ref=e13]: 即时通讯，轻松连接
+    - generic [ref=e15]:
+      - tablist [ref=e16]:
+        - tab "登录" [selected] [ref=e17]
+        - tab "注册" [ref=e18]
+      - tabpanel "登录" [ref=e19]:
+        - generic [ref=e20]:
+          - generic [ref=e21]:
+            - generic [ref=e22]: 欢迎回来
+            - generic [ref=e23]: 输入您的账号信息登录
+          - generic [ref=e24]:
+            - generic [ref=e43]: 服务器错误
+            - generic [ref=e25]:
+              - generic [ref=e26]: QQ号
+              - textbox "QQ号" [ref=e27]:
+                - /placeholder: 请输入QQ号
+                - text: "10001"
+            - generic [ref=e28]:
+              - generic [ref=e29]: 密码
+              - textbox "密码" [ref=e30]:
+                - /placeholder: 请输入密码
+                - text: "123456"
+            - button "登录" [ref=e31]
+            - paragraph [ref=e33]: 测试账号：QQ号 10001，密码 123456

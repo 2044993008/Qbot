@@ -115,6 +115,7 @@ export default function ChatList({ onSelectChat }: ChatListProps) {
               filteredConversations.map((conv) => (
                 <div
                   key={conv.id}
+                  data-testid="conversation-item"
                   onClick={() => onSelectChat(conv.type as 'private' | 'group', conv.target_id, conv.target_name || '未知', conv.target_avatar)}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"
                 >

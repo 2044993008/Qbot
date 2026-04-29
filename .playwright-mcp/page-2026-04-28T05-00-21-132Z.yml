@@ -1,0 +1,59 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e11] [cursor=pointer]:
+    - img [ref=e12]
+  - alert [ref=e15]
+  - generic [ref=e603]:
+    - generic [ref=e605]:
+      - generic [ref=e607]:
+        - generic [ref=e609]: D
+        - generic [ref=e610]:
+          - generic [ref=e611]: DemoUser
+          - generic [ref=e612]: QQ 10001
+        - button [ref=e613]:
+          - img [ref=e614]
+      - generic [ref=e618]:
+        - img [ref=e619]
+        - textbox "搜索" [ref=e622]
+      - navigation [ref=e623]:
+        - link "消息" [ref=e624] [cursor=pointer]:
+          - /url: /app
+          - img [ref=e625]
+          - generic [ref=e627]: 消息
+        - link "联系人" [ref=e628] [cursor=pointer]:
+          - /url: /app/friends
+          - img [ref=e629]
+          - generic [ref=e634]: 联系人
+        - link "空间" [ref=e635] [cursor=pointer]:
+          - /url: /app/moments
+          - img [ref=e636]
+          - generic [ref=e640]: 空间
+        - link "我的" [ref=e641] [cursor=pointer]:
+          - /url: /app/profile
+          - img [ref=e642]
+          - generic [ref=e645]: 我的
+    - generic [ref=e648]:
+      - generic [ref=e651]:
+        - generic [ref=e654]: D
+        - generic [ref=e655]:
+          - heading "DemoUser" [level=2] [ref=e656]
+          - paragraph [ref=e657]: QQ 10001
+      - generic [ref=e658]:
+        - generic [ref=e660]:
+          - generic [ref=e661]: 基本信息
+          - button "编辑" [ref=e662]
+        - generic [ref=e663]:
+          - generic [ref=e664]:
+            - generic [ref=e665]: 昵称
+            - generic [ref=e666]: DemoUser
+          - generic [ref=e667]:
+            - generic [ref=e668]: QQ号
+            - generic [ref=e669]: "10001"
+          - generic [ref=e670]:
+            - generic [ref=e671]: 个性签名
+            - paragraph [ref=e672]: QA回归验证中
+      - generic [ref=e673]:
+        - generic [ref=e675]: 在线状态
+        - generic [ref=e679]: 在线
+      - button "退出登录" [ref=e680]:
+        - img
+        - text: 退出登录

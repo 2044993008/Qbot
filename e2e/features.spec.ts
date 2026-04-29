@@ -20,6 +20,8 @@ test.describe('Moments', () => {
 
   test('should publish a moment', async ({ page }) => {
     await page.goto('/app/moments');
+    // 等待动态列表加载
+    await page.waitForLoadState('networkidle');
 
     const content = 'Test moment ' + Date.now();
     await page.fill('textarea[placeholder*="分享"], textarea[placeholder*="动态"]', content);
@@ -30,9 +32,11 @@ test.describe('Moments', () => {
 
   test('should like and unlike a moment', async ({ page }) => {
     await page.goto('/app/moments');
+    // 等待动态列表加载
+    await page.waitForLoadState('networkidle');
 
-    // 找到第一个点赞按钮
-    const likeButton = page.locator('button:has(.lucide-heart)').first();
+    // 找到第一个点赞按钮（使用更通用的选择器）
+    const likeButton = page.locator('button').filter({ has: page.locator('svg[class*="heart"], svg[class*="Heart"]') }).first();
     await likeButton.click();
 
     // 等待操作完成
@@ -51,13 +55,25 @@ test.describe('Scheduled Tasks', () => {
 
   test('should create a reminder task', async ({ page }) => {
     await page.goto('/app/scheduled-tasks');
+    await page.waitForLoadState('networkidle');
 
-    await page.click('button:has-text("创建任务"), button:has-text("新建")');
-    await page.fill('input[placeholder*="任务名称"]', 'Test Reminder ' + Date.now());
-    await page.fill('textarea[placeholder*="描述"]', 'This is a test reminder');
-    await page.fill('input[placeholder*="Cron"]', '0 9 * * 1');
-    await page.selectOption('select', 'reminder');
-    await page.click('button:has-text("创建"), button:has-text("保存")');
+    // 等待并点击桌面端可见的"创建任务"按钮
+    await page.locator('button:visible:has-text("创建任务")').first().waitFor({ timeout: 10000 });
+    await page.click('button:visible:has-text("创建任务")');
+
+    // 等待对话框标题出现
+    await expect(page.getByRole('heading', { name: '创建任务' })).toBeVisible();
+
+    await page.fill('input[placeholder*="早安"]', 'Test Reminder ' + Date.now());
+    await page.fill('textarea[placeholder*="用途"]', 'This is a test reminder');
+    await page.fill('input[placeholder="0 9 * * 1"]', '0 9 * * 1');
+
+    // 选择任务类型（shadcn Select 组件）
+    await page.click('[data-slot="select-trigger"]');
+    await page.locator('[role="option"]:has-text("提醒")').click();
+
+    // 点击 Dialog 内的创建按钮
+    await page.locator('[data-slot="dialog-content"] button:has-text("创建")').click();
 
     await expect(page.locator('text=/Test Reminder/')).toBeVisible();
   });

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm ts-check *)",
+      "Bash(pnpm run *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(docker *)",
+      "Bash(node *)",
+      "Bash(curl *)",
+      "Bash(pnpm dev *)",
+      "Bash(python *)",
+      "Bash(netstat -ano)",
+      "Bash(ReadFile *)",
+      "Bash(tasklist *)",
+      "Bash(taskkill *)",
+      "Bash(npx *)"
+    ]
+  }
+}
