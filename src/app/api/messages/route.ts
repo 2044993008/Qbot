@@ -23,9 +23,9 @@ async function verifyConversationOwnership(client: ReturnType<typeof getSupabase
 
   if (!conversation) return false;
 
-  // 如果是私聊，检查 user_id 或 target_id 是否为当前用户（双向会话）
+  // 如果是私聊，仅允许拥有该会话记录的用户访问
   if (conversation.type === 'private') {
-    return conversation.user_id === userId || conversation.target_id === userId;
+    return conversation.user_id === userId;
   }
 
   // 如果是群聊，检查用户是否是群成员
@@ -148,6 +148,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '无权向该会话发送消息' }, { status: 403 });
     }
 
+    // 获取会话信息（用于判断是否为群聊）
+    const { data: conversation } = await client
+      .from('conversations')
+      .select('id, type')
+      .eq('id', conversation_id)
+      .single();
+
     // 插入消息
     const { data: message, error } = await client
       .from('messages')
@@ -171,6 +178,39 @@ export async function POST(request: NextRequest) {
         last_message_time: message.created_at,
       })
       .eq('id', conversation_id);
+
+    // 【群聊 @管家 触发 AI 回复】
+    // 检测群聊消息中是否 @了小Q管家，如果是，异步触发 Bot 回复
+    const isGroupChat = conversation && conversation.type === 'group';
+    const hasAtBot = content.includes('@小Q管家') || content.includes('@管家');
+    if (isGroupChat && hasAtBot) {
+      const query = content
+        .replace(/@小Q管家/g, '')
+        .replace(/@管家/g, '')
+        .trim();
+      if (query) {
+        // 异步触发，不阻塞当前请求
+        Promise.resolve().then(async () => {
+          try {
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${process.env.PORT || 5000}`;
+            const botRes = await fetch(`${baseUrl}/api/bot`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Cookie': request.headers.get('cookie') || '',
+                'Authorization': request.headers.get('authorization') || '',
+              },
+              body: JSON.stringify({ message: query, conversation_id }),
+            });
+            if (!botRes.ok) {
+              console.error('Bot API error:', await botRes.text());
+            }
+          } catch (botErr) {
+            console.error('群聊 Bot 回复失败:', botErr);
+          }
+        });
+      }
+    }
 
     // 获取发送者信息
     const { data: sender } = await client
