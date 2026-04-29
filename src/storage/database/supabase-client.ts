@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { execSync } from 'child_process';
-import { getReportBuffer, createWrappedFetch } from 'coze-coding-dev-sdk';
+import { join } from 'path';
 
 let envLoaded = false;
 
@@ -9,16 +9,28 @@ interface SupabaseCredentials {
   anonKey: string;
 }
 
+type FetchLike = typeof fetch;
+
+function getEnvValue(...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value) return value;
+  }
+  return undefined;
+}
+
 function loadEnv(): void {
-  if (envLoaded || (process.env.COZE_SUPABASE_URL && process.env.COZE_SUPABASE_ANON_KEY)) {
+  if (envLoaded || getEnvValue('LOCAL_SUPABASE_URL', 'COZE_SUPABASE_URL') && getEnvValue('LOCAL_SUPABASE_ANON_KEY', 'COZE_SUPABASE_ANON_KEY')) {
     return;
   }
 
   try {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('dotenv').config();
-      if (process.env.COZE_SUPABASE_URL && process.env.COZE_SUPABASE_ANON_KEY) {
+      const dotenv = require('dotenv');
+      dotenv.config({ path: join(process.cwd(), '.env.local') });
+      dotenv.config();
+      if (getEnvValue('LOCAL_SUPABASE_URL', 'COZE_SUPABASE_URL') && getEnvValue('LOCAL_SUPABASE_ANON_KEY', 'COZE_SUPABASE_ANON_KEY')) {
         envLoaded = true;
         return;
       }
@@ -72,8 +84,8 @@ except Exception as e:
 function getSupabaseCredentials(): SupabaseCredentials {
   loadEnv();
 
-  const url = process.env.COZE_SUPABASE_URL;
-  const anonKey = process.env.COZE_SUPABASE_ANON_KEY;
+  const url = getEnvValue('LOCAL_SUPABASE_URL', 'COZE_SUPABASE_URL');
+  const anonKey = getEnvValue('LOCAL_SUPABASE_ANON_KEY', 'COZE_SUPABASE_ANON_KEY');
 
   if (!url) {
     throw new Error('COZE_SUPABASE_URL is not set');
@@ -87,7 +99,24 @@ function getSupabaseCredentials(): SupabaseCredentials {
 
 function getSupabaseServiceRoleKey(): string | undefined {
   loadEnv();
-  return process.env.COZE_SUPABASE_SERVICE_ROLE_KEY;
+  return getEnvValue('LOCAL_SUPABASE_SERVICE_ROLE_KEY', 'COZE_SUPABASE_SERVICE_ROLE_KEY', 'LOCAL_SUPABASE_ANON_KEY', 'COZE_SUPABASE_ANON_KEY');
+}
+
+function shouldRewriteLocalRestUrl(url: string): boolean {
+  return /^https?:\/\/(127\.0\.0\.1|localhost):54321\/?$/.test(url);
+}
+
+function createLocalPostgrestFetch(baseFetch: FetchLike): FetchLike {
+  return (input, init) => {
+    const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const rewrittenUrl = requestUrl.replace('/rest/v1/', '/');
+
+    if (typeof input === 'string' || input instanceof URL) {
+      return baseFetch(rewrittenUrl, init);
+    }
+
+    return baseFetch(new Request(rewrittenUrl, input), init);
+  };
 }
 
 function getSupabaseClient(token?: string): SupabaseClient {
@@ -105,13 +134,9 @@ function getSupabaseClient(token?: string): SupabaseClient {
   if (token) {
     globalOptions.headers = { Authorization: `Bearer ${token}` };
   }
-  try {
-    const buffer = getReportBuffer();
-    if (buffer) {
-      globalOptions.fetch = createWrappedFetch(buffer, 'supabase');
-    }
-  } catch {
-    // Silent — reporting setup failure should not block client creation
+
+  if (shouldRewriteLocalRestUrl(url)) {
+    globalOptions.fetch = createLocalPostgrestFetch(fetch);
   }
 
   return createClient(url, key, {

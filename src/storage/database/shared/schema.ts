@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, serial, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, serial, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // 用户表
@@ -155,6 +155,7 @@ export const moment_likes = pgTable(
     index("moment_likes_moment_id_idx").on(table.moment_id),
     index("moment_likes_user_id_idx").on(table.user_id),
     index("moment_likes_moment_user_idx").on(table.moment_id, table.user_id),
+    uniqueIndex("moment_likes_moment_user_unique_idx").on(table.moment_id, table.user_id),
   ]
 );
 
@@ -171,6 +172,7 @@ export const user_settings = pgTable(
   (table) => [
     index("user_settings_user_id_idx").on(table.user_id),
     index("user_settings_user_key_idx").on(table.user_id, table.key),
+    uniqueIndex("user_settings_user_key_unique_idx").on(table.user_id, table.key),
   ]
 );
 
@@ -191,6 +193,73 @@ export const group_role_mappings = pgTable(
   ]
 );
 
+// 定时任务表
+export const scheduled_tasks = pgTable(
+  "scheduled_tasks",
+  {
+    id: serial("id").primaryKey().notNull(),
+    user_id: integer("user_id").notNull().references(() => users.id),
+    name: varchar("name", { length: 128 }).notNull(),
+    description: text("description").default(""),
+    cron_expression: varchar("cron_expression", { length: 64 }).notNull(),
+    task_type: varchar("task_type", { length: 64 }).notNull(), // 'reminder', 'send_message', 'post_moment'
+    config: jsonb("config").default({}),
+    enabled: boolean("enabled").default(true),
+    last_run_at: timestamp("last_run_at", { withTimezone: true }),
+    next_run_at: timestamp("next_run_at", { withTimezone: true }),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("scheduled_tasks_user_id_idx").on(table.user_id),
+    index("scheduled_tasks_enabled_idx").on(table.enabled),
+    index("scheduled_tasks_next_run_at_idx").on(table.next_run_at),
+  ]
+);
+
+// 任务执行日志表
+export const task_execution_logs = pgTable(
+  "task_execution_logs",
+  {
+    id: serial("id").primaryKey().notNull(),
+    task_id: integer("task_id").notNull().references(() => scheduled_tasks.id),
+    status: varchar("status", { length: 20 }).notNull(), // 'running', 'success', 'failed'
+    output: text("output").default(""),
+    error_message: text("error_message").default(""),
+    started_at: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    completed_at: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("task_execution_logs_task_id_idx").on(table.task_id),
+    index("task_execution_logs_status_idx").on(table.status),
+    index("task_execution_logs_started_at_idx").on(table.started_at),
+  ]
+);
+
+// Bot 审计日志表
+export const bot_audit_logs = pgTable(
+  "bot_audit_logs",
+  {
+    id: serial("id").primaryKey().notNull(),
+    user_id: integer("user_id").notNull().references(() => users.id),
+    session_id: varchar("session_id", { length: 64 }).default(""),
+    request: text("request").notNull(),
+    plan: jsonb("plan").default({}),
+    tool_calls: jsonb("tool_calls").default([]),
+    response: text("response").default(""),
+    latency_ms: integer("latency_ms").default(0),
+    tokens_used: integer("tokens_used").default(0),
+    model: varchar("model", { length: 64 }).default(""),
+    status: varchar("status", { length: 20 }).notNull().default("success"), // success, failed, rejected
+    error: text("error").default(""),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("bot_audit_logs_user_id_idx").on(table.user_id),
+    index("bot_audit_logs_status_idx").on(table.status),
+    index("bot_audit_logs_created_at_idx").on(table.created_at),
+  ]
+);
+
 // 类型导出
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
@@ -204,3 +273,29 @@ export type MomentComment = typeof moment_comments.$inferSelect;
 export type MomentLike = typeof moment_likes.$inferSelect;
 export type UserSetting = typeof user_settings.$inferSelect;
 export type GroupRoleMapping = typeof group_role_mappings.$inferSelect;
+export type ScheduledTask = typeof scheduled_tasks.$inferSelect;
+export type TaskExecutionLog = typeof task_execution_logs.$inferSelect;
+export type BotAuditLog = typeof bot_audit_logs.$inferSelect;
+
+// 向量记忆表（需要 pgvector 扩展）
+export const memory_embeddings = pgTable(
+  "memory_embeddings",
+  {
+    id: serial("id").primaryKey().notNull(),
+    user_id: integer("user_id").notNull().references(() => users.id),
+    content: text("content").notNull(),
+    embedding: text("embedding").notNull(), // 存储为 JSON 数组字符串，或使用 pgvector 的 vector 类型
+    category: varchar("category", { length: 50 }).default("fact"), // preference, fact, event, relationship, goal
+    confidence: integer("confidence").default(80), // 0-100
+    source: text("source").default(""), // 记忆来源（如用户对话、系统提取）
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("memory_embeddings_user_id_idx").on(table.user_id),
+    index("memory_embeddings_category_idx").on(table.category),
+    index("memory_embeddings_created_at_idx").on(table.created_at),
+  ]
+);
+
+export type MemoryEmbedding = typeof memory_embeddings.$inferSelect;
