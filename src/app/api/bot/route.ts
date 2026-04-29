@@ -3,6 +3,7 @@ import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
 import { checkUserRateLimit } from '@/lib/rate-limit';
 import { validateBody, botMessageSchema, botToolExecuteSchema } from '@/lib/validation';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 // ============================================
 // OpenAI 兼容 LLM 客户端
@@ -2155,6 +2156,12 @@ export async function POST(request: NextRequest) {
         response: `请求太频繁啦，请 ${rateLimit.resetIn} 秒后再试~`,
         type: 'text',
       }, { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } });
+    }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     // 初始化审计日志

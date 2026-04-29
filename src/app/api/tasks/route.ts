@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
 import { validateBody, createTaskSchema } from '@/lib/validation';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 import { CronJob } from 'cron';
 
 // GET - 获取当前用户的定时任务列表
@@ -40,6 +41,13 @@ export async function POST(request: NextRequest) {
     if (!validated.success) {
       return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
+    }
+
     const { name, description, cron_expression, task_type, config, enabled } = validated.data;
 
     // 验证 cron 表达式是否有效，并计算下次执行时间

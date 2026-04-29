@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { validateBody, updateUserSchema } from '@/lib/validation';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 
 // GET - 获取当前用户信息
@@ -43,6 +44,13 @@ export async function PUT(request: NextRequest) {
     if (!validated.success) {
       return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
+    }
+
     const updates = validated.data;
     const allowedFields = ['nickname', 'signature', 'avatar_color'] as const;
     const filteredUpdates: Record<string, string> = {};

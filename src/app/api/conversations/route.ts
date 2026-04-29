@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { validateBody, createConversationSchema } from '@/lib/validation';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 
 // GET - 获取会话列表
@@ -92,6 +93,13 @@ export async function POST(request: NextRequest) {
     if (!validated.success) {
       return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
+    }
+
     const { type, target_id } = validated.data;
 
     const client = getSupabaseClient();
