@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import type { Conversation, Friend, Group, GroupMember, Message, Moment } from '@/lib/types';
-import { conversationsApi, friendsApi, groupsApi, messagesApi, momentsApi } from '@/lib/api';
+import { useState, useCallback, useEffect } from 'react';
+import type { Conversation, Friend, Group, GroupMember, Message, Moment, ScheduledTask } from '@/lib/types';
+import { conversationsApi, friendsApi, groupsApi, messagesApi, momentsApi, tasksApi } from '@/lib/api';
 
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -126,6 +126,31 @@ export function useMessages(conversationId: number | null) {
     })();
   }, [conversationId]);
 
+  // 轮询新消息（用于群聊中接收 Bot 异步回复等场景）
+  useEffect(() => {
+    if (!conversationId) return;
+    
+    fetchMessages();
+    
+    const interval = setInterval(() => {
+      messagesApi.getList(conversationId).then(response => {
+        setMessages(prev => {
+          const newMessages = response.messages || [];
+          // 只有当消息数量变化或最后一条消息变化时才更新，避免无意义渲染
+          if (newMessages.length !== prev.length) return newMessages;
+          const lastNew = newMessages[newMessages.length - 1];
+          const lastPrev = prev[prev.length - 1];
+          if (lastNew && lastPrev && lastNew.id !== lastPrev.id) return newMessages;
+          return prev;
+        });
+      }).catch(() => {
+        // 静默忽略轮询错误
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [conversationId, fetchMessages]);
+
   const sendMessage = useCallback((
     type: 'text' | 'image' | 'file',
     content: string,
@@ -184,7 +209,7 @@ export function useMoments(userId?: number) {
         return response.moment;
       } catch (error) {
         console.error('发布动态失败:', error);
-        return null;
+        throw error;
       }
     })();
   }, []);
@@ -215,8 +240,41 @@ export function useMoments(userId?: number) {
               : m
           ));
         }
+        return response.comment;
       } catch (error) {
         console.error('评论失败:', error);
+        throw error;
+      }
+    })();
+  }, []);
+
+  const editMoment = useCallback((momentId: number, content: string, images?: string[]) => {
+    return (async () => {
+      try {
+        const response = await momentsApi.update(momentId, { content, images });
+        if (response.moment) {
+          setMoments(prev => prev.map(m => 
+            m.id === momentId 
+              ? { ...m, content: response.moment.content, images: response.moment.images }
+              : m
+          ));
+        }
+        return response.moment;
+      } catch (error) {
+        console.error('编辑动态失败:', error);
+        throw error;
+      }
+    })();
+  }, []);
+
+  const deleteMoment = useCallback((momentId: number) => {
+    return (async () => {
+      try {
+        await momentsApi.delete(momentId);
+        setMoments(prev => prev.filter(m => m.id !== momentId));
+      } catch (error) {
+        console.error('删除动态失败:', error);
+        throw error;
       }
     })();
   }, []);
@@ -228,5 +286,77 @@ export function useMoments(userId?: number) {
     publishMoment,
     likeMoment,
     commentMoment,
+    editMoment,
+    deleteMoment,
+  };
+}
+
+export function useTasks() {
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchTasks = useCallback(() => {
+    return (async () => {
+      setIsLoading(true);
+      try {
+        const response = await tasksApi.getList();
+        setTasks(response.tasks || []);
+      } catch (error) {
+        console.error('获取定时任务列表失败:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
+
+  const createTask = useCallback((data: Omit<ScheduledTask, 'id' | 'created_at' | 'last_run_at' | 'next_run_at'>) => {
+    return (async () => {
+      try {
+        const response = await tasksApi.create(data);
+        if (response.task) {
+          setTasks(prev => [response.task, ...prev]);
+        }
+        return response.task;
+      } catch (error) {
+        console.error('创建定时任务失败:', error);
+        throw error;
+      }
+    })();
+  }, []);
+
+  const updateTask = useCallback((id: number, data: Partial<Omit<ScheduledTask, 'id' | 'created_at'>>) => {
+    return (async () => {
+      try {
+        const response = await tasksApi.update(id, data);
+        if (response.task) {
+          setTasks(prev => prev.map(t => t.id === id ? response.task : t));
+        }
+        return response.task;
+      } catch (error) {
+        console.error('更新定时任务失败:', error);
+        throw error;
+      }
+    })();
+  }, []);
+
+  const deleteTask = useCallback((id: number) => {
+    return (async () => {
+      try {
+        await tasksApi.delete(id);
+        setTasks(prev => prev.filter(t => t.id !== id));
+      } catch (error) {
+        console.error('删除定时任务失败:', error);
+        throw error;
+      }
+    })();
+  }, []);
+
+  return {
+    tasks,
+    isLoading,
+    fetchTasks,
+    createTask,
+    updateTask,
+    deleteTask,
   };
 }

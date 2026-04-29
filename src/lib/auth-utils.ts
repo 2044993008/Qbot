@@ -86,16 +86,3 @@ export async function isGroupMember(groupId: number, userId: number): Promise<bo
 
   return !!data;
 }
-
-// 解码 token 获取用户信息（不验证签名，仅用于本地快速读取）
-export function decodeToken(token: string): { userId: number; qqNumber: string } | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-    return { userId: payload.userId, qqNumber: payload.qqNumber };
-  } catch {
-    return null;
-  }
-}

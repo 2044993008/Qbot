@@ -1,4 +1,4 @@
-import type { User, Friend, Group, GroupMember, Conversation, Message, Moment, BotResponse, MessagePreview } from './types';
+import type { User, Friend, Group, GroupMember, Conversation, Message, Moment, BotResponse, MessagePreview, ScheduledTask } from './types';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'qq_token';
@@ -156,14 +156,31 @@ export const momentsApi = {
       method: 'POST',
       body: JSON.stringify({ moment_id: momentId, content }),
     }),
+
+  update: (momentId: number, data: { content?: string; images?: string[] }) =>
+    request<{ moment: Moment }>(`/moments/${momentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (momentId: number) =>
+    request<{ success: boolean }>(`/moments/${momentId}`, {
+      method: 'DELETE',
+    }),
 };
 
 // 管家 API
 export const botApi = {
-  send: (message: string, context?: unknown) =>
+  send: (message: string, conversationId?: number, context?: unknown) =>
     request<BotResponse>('/bot', {
       method: 'POST',
-      body: JSON.stringify({ message, context }),
+      body: JSON.stringify({ message, conversation_id: conversationId, context }),
+    }),
+
+  executeTool: (tool: string, params: Record<string, unknown>) =>
+    request<{ imageUrl?: string | null; videoUrl?: string | null; success?: boolean; message?: string; error?: string }>('/bot', {
+      method: 'POST',
+      body: JSON.stringify({ execute_tool: true, tool, params }),
     }),
 
   getConfig: () =>
@@ -181,6 +198,38 @@ export const settingsApi = {
     request<{ success: boolean }>('/settings', {
       method: 'PUT',
       body: JSON.stringify({ key, value }),
+    }),
+};
+
+// 定时任务 API
+export const tasksApi = {
+  getList: () =>
+    request<{ tasks: ScheduledTask[] }>('/tasks'),
+
+  getById: (id: number) =>
+    request<{ task: ScheduledTask }>(`/tasks/${id}`),
+
+  create: (data: Omit<ScheduledTask, 'id' | 'created_at' | 'last_run_at' | 'next_run_at'>) =>
+    request<{ task: ScheduledTask }>('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: Partial<Omit<ScheduledTask, 'id' | 'created_at'>>) =>
+    request<{ task: ScheduledTask }>(`/tasks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: number) =>
+    request<{ success: boolean }>(`/tasks/${id}`, {
+      method: 'DELETE',
+    }),
+
+  run: (taskId: number) =>
+    request<{ success: boolean; result?: unknown }>('/tasks/run', {
+      method: 'POST',
+      body: JSON.stringify({ task_id: taskId }),
     }),
 };
 

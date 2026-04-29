@@ -14,6 +14,7 @@ export interface User {
 // 好友类型
 export interface Friend extends User {
   remark?: string;
+  friendship_created_at?: string;
 }
 
 // 群组类型
@@ -118,10 +119,29 @@ export interface BotResponse {
   type: 'text' | 'search_results' | 'preview' | 'polished_text';
   results?: SearchResult[];
   preview?: {
-    content: string;
+    action: 'send_message' | 'publish_moment' | 'generate_image' | 'generate_video' | 'delete_friend' | 'leave_group' | 'edit_moment' | 'delete_moment';
+    content?: string;
+    target?: string;
+    target_type?: 'friend' | 'group';
+    target_id?: number;
+    conversation_id?: number;
     receiver?: string;
     emojis?: string[];
     isMoment?: boolean;
+    prompt?: string;
+    style?: string;
+    duration?: number;
+    image_url?: string;
+    image_urls?: string[];
+    // 新增：社交管理操作字段
+    friend_id?: number;
+    friend_name?: string;
+    group_id?: number;
+    group_name?: string;
+    moment_id?: number;
+    old_content?: string;
+    new_content?: string;
+    new_images?: string[];
   };
   content?: string;
   groupName?: string;
@@ -146,4 +166,30 @@ export interface MessagePreview {
   content: string;
   type: string;
   created_at: string;
+}
+
+// 定时任务类型
+export interface ScheduledTask {
+  id: number;
+  user_id: number;
+  name: string;
+  description: string;
+  cron_expression: string;
+  task_type: 'reminder' | 'send_message' | 'post_moment';
+  config: Record<string, unknown>;
+  enabled: boolean;
+  last_run_at?: string;
+  next_run_at?: string;
+  created_at: string;
+}
+
+// 任务执行日志类型
+export interface TaskExecutionLog {
+  id: number;
+  task_id: number;
+  status: 'running' | 'success' | 'failed';
+  output: string;
+  error_message: string;
+  started_at: string;
+  completed_at?: string;
 }
