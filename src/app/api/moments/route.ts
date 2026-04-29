@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { checkUserRateLimit } from '@/lib/rate-limit';
+import { validateBody, publishMomentSchema } from '@/lib/validation';
 
 
 // GET - 获取动态列表
@@ -108,11 +109,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '发布动态过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
     }
 
-    const { content, images } = await request.json();
-    
-    if (!content && (!images || images.length === 0)) {
-      return NextResponse.json({ error: '内容不能为空' }, { status: 400 });
+    const validated = await validateBody(request, publishMomentSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+    const { content, images } = validated.data;
 
     const client = getSupabaseClient();
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
+import { validateBody, updateFriendRemarkSchema } from '@/lib/validation';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -94,7 +95,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: '缺少好友ID' }, { status: 400 });
     }
 
-    const { remark } = await request.json();
+    const validated = await validateBody(request, updateFriendRemarkSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
+    }
+    const { remark } = validated.data;
     const client = getSupabaseClient();
 
     const { error } = await client

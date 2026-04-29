@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { validateBody, updateUserSchema } from '@/lib/validation';
 
 
 // GET - 获取当前用户信息
@@ -38,13 +39,17 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
-    const updates = await request.json();
-    const allowedFields = ['nickname', 'signature', 'avatar_color'];
+    const validated = await validateBody(request, updateUserSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
+    }
+    const updates = validated.data;
+    const allowedFields = ['nickname', 'signature', 'avatar_color'] as const;
     const filteredUpdates: Record<string, string> = {};
     
     for (const key of allowedFields) {
       if (updates[key] !== undefined) {
-        filteredUpdates[key] = updates[key];
+        filteredUpdates[key] = updates[key] as string;
       }
     }
 

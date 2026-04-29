@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
+import { validateBody, createTaskSchema } from '@/lib/validation';
 import { CronJob } from 'cron';
 
 // GET - 获取当前用户的定时任务列表
@@ -35,12 +36,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { name, description, cron_expression, task_type, config, enabled } = body;
-
-    if (!name || !cron_expression || !task_type) {
-      return NextResponse.json({ error: '缺少必要参数: name, cron_expression, task_type' }, { status: 400 });
+    const validated = await validateBody(request, createTaskSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+    const { name, description, cron_expression, task_type, config, enabled } = validated.data;
 
     // 验证 cron 表达式是否有效，并计算下次执行时间
     let nextRunAt: string | null = null;

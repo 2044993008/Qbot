@@ -4,6 +4,7 @@ import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { cookies } from 'next/headers';
 import { generateToken } from '@/lib/auth-utils';
 import { rateLimitMiddleware } from '@/lib/rate-limit';
+import { validateBody, registerSchema } from '@/lib/validation';
 
 // POST - 注册
 export async function POST(request: NextRequest) {
@@ -15,19 +16,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { qq_number, nickname, password } = await request.json();
-    
-    if (!qq_number || !nickname || !password) {
-      return NextResponse.json({ error: '请填写所有必填项' }, { status: 400 });
+    const validated = await validateBody(request, registerSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
-
-    if (qq_number.length < 5 || qq_number.length > 12) {
-      return NextResponse.json({ error: 'QQ号长度必须在5-12位之间' }, { status: 400 });
-    }
-
-    if (password.length < 6) {
-      return NextResponse.json({ error: '密码长度至少6位' }, { status: 400 });
-    }
+    const { qq_number, nickname, password } = validated.data;
 
     const client = getSupabaseClient();
 

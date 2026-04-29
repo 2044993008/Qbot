@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { validateBody, createConversationSchema } from '@/lib/validation';
 
 
 // GET - 获取会话列表
@@ -87,11 +88,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
-    const { type, target_id } = await request.json();
-    
-    if (!type || !target_id) {
-      return NextResponse.json({ error: '缺少参数' }, { status: 400 });
+    const validated = await validateBody(request, createConversationSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+    const { type, target_id } = validated.data;
 
     const client = getSupabaseClient();
     

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { checkUserRateLimit } from '@/lib/rate-limit';
+import { validateBody, sendMessageSchema } from '@/lib/validation';
 import type { Message } from '@/lib/types';
 
 interface MessageRow {
@@ -141,11 +142,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '发送消息过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
     }
 
-    const { conversation_id, type, content, metadata } = await request.json();
-    
-    if (!conversation_id || !content) {
-      return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
+    const validated = await validateBody(request, sendMessageSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+    const { conversation_id, type, content, metadata } = validated.data;
 
     const client = getSupabaseClient();
 

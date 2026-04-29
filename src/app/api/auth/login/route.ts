@@ -4,6 +4,7 @@ import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { cookies } from 'next/headers';
 import { generateToken, verifyToken } from '@/lib/auth-utils';
 import { rateLimitMiddleware } from '@/lib/rate-limit';
+import { validateBody, loginSchema } from '@/lib/validation';
 
 // POST - 登录
 export async function POST(request: NextRequest) {
@@ -15,11 +16,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { qq_number, password } = await request.json();
-    
-    if (!qq_number || !password) {
-      return NextResponse.json({ error: '请输入QQ号和密码' }, { status: 400 });
+    const validated = await validateBody(request, loginSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+    const { qq_number, password } = validated.data;
 
     const client = getSupabaseClient();
     const { data, error } = await client

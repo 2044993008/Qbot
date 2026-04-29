@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
 import { checkUserRateLimit } from '@/lib/rate-limit';
+import { validateBody, botMessageSchema, botToolExecuteSchema } from '@/lib/validation';
 
 // ============================================
 // OpenAI 兼容 LLM 客户端
@@ -2131,17 +2132,21 @@ export async function POST(request: NextRequest) {
 
     // 处理工具直接执行（用户确认后）
     if (body.execute_tool) {
+      const toolValidated = botToolExecuteSchema.safeParse(body);
+      if (!toolValidated.success) {
+        return NextResponse.json({ error: '参数验证失败' }, { status: 400 });
+      }
       const client = await getSupabaseClient();
-      const result = await executeToolDirectly(client, payload.userId, body.tool, body.params || {});
+      const result = await executeToolDirectly(client, payload.userId, toolValidated.data.tool, toolValidated.data.params || {});
       return NextResponse.json(result);
     }
 
-    const { message, conversation_id } = body;
-    const userMessage = message?.trim();
-
-    if (!userMessage) {
-      return NextResponse.json({ error: '消息不能为空' }, { status: 400 });
+    const msgValidated = botMessageSchema.safeParse(body);
+    if (!msgValidated.success) {
+      return NextResponse.json({ error: '参数验证失败' }, { status: 400 });
     }
+    const { message, conversation_id } = msgValidated.data;
+    const userMessage = message.trim();
 
     // 【用户级限流】
     const rateLimit = checkUserRateLimit(payload.userId, { maxRequests: 30, windowMs: 60 * 1000, keyPrefix: 'bot' });
