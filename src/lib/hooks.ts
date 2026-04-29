@@ -136,11 +136,18 @@ export function useMessages(conversationId: number | null) {
       messagesApi.getList(conversationId).then(response => {
         setMessages(prev => {
           const newMessages = response.messages || [];
-          // 只有当消息数量变化或最后一条消息变化时才更新，避免无意义渲染
-          if (newMessages.length !== prev.length) return newMessages;
+          // 保留客户端-only 的临时消息（id < 0，如 Bot 流式回复占位、Preview 卡片等）
+          const tempMessages = prev.filter(m => m.id < 0);
+          const serverMessageCount = prev.filter(m => m.id > 0).length;
+          // 只有当服务器消息有变化时才更新
+          if (newMessages.length !== serverMessageCount) {
+            return [...newMessages, ...tempMessages];
+          }
           const lastNew = newMessages[newMessages.length - 1];
-          const lastPrev = prev[prev.length - 1];
-          if (lastNew && lastPrev && lastNew.id !== lastPrev.id) return newMessages;
+          const lastPrev = prev.filter(m => m.id > 0).pop();
+          if (lastNew && lastPrev && lastNew.id !== lastPrev.id) {
+            return [...newMessages, ...tempMessages];
+          }
           return prev;
         });
       }).catch(() => {

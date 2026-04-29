@@ -4,7 +4,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Message, BotResponse, SearchResult } from '@/lib/types';
+import type { Message, BotResponse, SearchResult, BotPreviewAction } from '@/lib/types';
 import { conversationsApi, messagesApi, momentsApi, botApi } from '@/lib/api';
 
 // ============================================
@@ -107,16 +107,12 @@ function SearchResultsRenderer({ results }: { results: SearchResult[] }) {
 // 预览确认卡片渲染器
 // ============================================
 
-export const PreviewMessageRenderer: MessageRenderer = ({
-  msg,
-  botUser,
-  conversationId,
-  onConfirmAction,
-  onCancelAction,
-}) => {
-  const preview = msg.metadata?.preview as BotResponse['preview'];
-  if (!preview) return null;
-
+// 单个操作预览卡片
+function PreviewActionCard({
+  preview,
+}: {
+  preview: BotPreviewAction;
+}) {
   const actionConfig = {
     send_message: { icon: '✉️', label: '代发消息', color: 'text-blue-600' },
     publish_moment: { icon: '📢', label: '发布空间动态', color: 'text-green-600' },
@@ -131,10 +127,9 @@ export const PreviewMessageRenderer: MessageRenderer = ({
   const config = actionConfig[preview?.action as keyof typeof actionConfig] || { icon: '⚡', label: '执行操作', color: 'text-gray-600' };
 
   return (
-    <div className="message-bubble message-bubble-received bg-amber-50 border-2 border-amber-300 shadow-md max-w-[85%]">
-      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-amber-200">
+    <div className="bg-white rounded-lg p-3 mb-2 border border-amber-200 last:mb-0">
+      <div className="flex items-center gap-2 mb-2">
         <span className="text-lg">{config.icon}</span>
-        <span className="font-bold text-gray-800 text-sm">AI管家 请求确认</span>
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full bg-white ${config.color}`}>
           {config.label}
         </span>
@@ -157,8 +152,7 @@ export const PreviewMessageRenderer: MessageRenderer = ({
         </div>
       )}
 
-      <div className="bg-white rounded-lg p-3 mb-3 border border-amber-100">
-        <div className="text-xs text-gray-400 mb-1">内容预览</div>
+      <div className="mt-2">
         {preview?.action === 'edit_moment' && preview?.old_content && (
           <div className="space-y-2">
             <div className="text-xs text-gray-400">原内容</div>
@@ -188,14 +182,50 @@ export const PreviewMessageRenderer: MessageRenderer = ({
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      <div className="flex gap-2">
+export const PreviewMessageRenderer: MessageRenderer = ({
+  msg,
+  botUser,
+  conversationId,
+  onConfirmAction,
+  onCancelAction,
+}) => {
+  const preview = msg.metadata?.preview as BotResponse['preview'];
+  if (!preview) {
+    return null;
+  }
+
+  // 支持 { actions: [...] } 格式（多步骤 Agent 编排返回）
+  const actions: BotPreviewAction[] = 'actions' in preview && Array.isArray((preview as Record<string, unknown>).actions)
+    ? (preview as { actions: BotPreviewAction[] }).actions
+    : [preview as BotPreviewAction];
+
+  return (
+    <div className="message-bubble message-bubble-received bg-amber-50 border-2 border-amber-300 shadow-md max-w-[85%]">
+      <div className="flex items-center gap-2 mb-3 pb-2 border-b border-amber-200">
+        <span className="text-lg">⚡</span>
+        <span className="font-bold text-gray-800 text-sm">AI管家 请求确认</span>
+        {actions.length > 1 && (
+          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white text-gray-600">
+            共 {actions.length} 项操作
+          </span>
+        )}
+      </div>
+
+      {actions.map((action, index) => (
+        <PreviewActionCard key={index} preview={action} />
+      ))}
+
+      <div className="flex gap-2 mt-3">
         <Button
           size="sm"
           onClick={() => onConfirmAction?.(msg)}
           className="bg-[#12b7f5] hover:bg-[#0aa8e8] text-white font-medium px-4"
         >
-          确认执行
+          {actions.length > 1 ? '全部确认执行' : '确认执行'}
         </Button>
         <Button
           size="sm"

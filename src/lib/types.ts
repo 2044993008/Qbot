@@ -113,36 +113,38 @@ export interface MomentComment {
   created_at: string;
 }
 
+// 单个操作预览类型
+export interface BotPreviewAction {
+  action: 'send_message' | 'publish_moment' | 'generate_image' | 'generate_video' | 'delete_friend' | 'leave_group' | 'edit_moment' | 'delete_moment';
+  content?: string;
+  target?: string;
+  target_type?: 'friend' | 'group';
+  target_id?: number;
+  conversation_id?: number;
+  receiver?: string;
+  emojis?: string[];
+  isMoment?: boolean;
+  prompt?: string;
+  style?: string;
+  duration?: number;
+  image_url?: string;
+  image_urls?: string[];
+  friend_id?: number;
+  friend_name?: string;
+  group_id?: number;
+  group_name?: string;
+  moment_id?: number;
+  old_content?: string;
+  new_content?: string;
+  new_images?: string[];
+}
+
 // 管家响应类型
 export interface BotResponse {
   response: string;
   type: 'text' | 'search_results' | 'preview' | 'polished_text';
   results?: SearchResult[];
-  preview?: {
-    action: 'send_message' | 'publish_moment' | 'generate_image' | 'generate_video' | 'delete_friend' | 'leave_group' | 'edit_moment' | 'delete_moment';
-    content?: string;
-    target?: string;
-    target_type?: 'friend' | 'group';
-    target_id?: number;
-    conversation_id?: number;
-    receiver?: string;
-    emojis?: string[];
-    isMoment?: boolean;
-    prompt?: string;
-    style?: string;
-    duration?: number;
-    image_url?: string;
-    image_urls?: string[];
-    // 新增：社交管理操作字段
-    friend_id?: number;
-    friend_name?: string;
-    group_id?: number;
-    group_name?: string;
-    moment_id?: number;
-    old_content?: string;
-    new_content?: string;
-    new_images?: string[];
-  };
+  preview?: BotPreviewAction | { actions: BotPreviewAction[] };
   content?: string;
   groupName?: string;
 }

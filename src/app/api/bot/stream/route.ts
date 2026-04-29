@@ -1,11 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
-
-interface OpenAIMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
+import { POST as botPost } from '../route';
 
 function getOpenAIConfig() {
   const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
@@ -22,6 +18,156 @@ function encodeSSE(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
 }
 
+// 检测是否为复杂请求（需要多步执行 / Agent 编排）
+function detectComplexRequest(message: string): boolean {
+  const complexPatterns = [
+    /然后|接着|之后|再|随后|最后/, // 多步骤连接词
+    /先.*再|先.*然后/, // 先后顺序
+    /搜索.*发|查.*发|找.*发/, // 搜索后发消息
+    /润色.*发|改.*发/, // 润色后发送
+    /(?:帮|代|替).{0,5}(?:我|忙)?.{0,10}(?:然后|接着|再)/, // 复杂代办
+  ];
+  return complexPatterns.some(p => p.test(message)) || message.length > 50;
+}
+
+// 模拟流式输出（将完整文本转为逐字 SSE）
+function simulateTextStream(content: string, preview?: Record<string, unknown>) {
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'start' })));
+
+          // 如果有 preview，先发送 preview 事件
+          if (preview) {
+            controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'preview', preview })));
+          }
+
+        // 逐字符发送模拟打字机效果
+        const chars = content.split('');
+        const delayMs = chars.length > 500 ? 5 : 15; // 长文本加速
+        for (const char of chars) {
+          controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'delta', content: char })));
+          if (delayMs > 0) {
+            await new Promise(r => setTimeout(r, delayMs));
+          }
+        }
+
+        controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'done', fullContent: content })));
+        controller.close();
+      } catch {
+        controller.enqueue(new TextEncoder().encode(encodeSSE({ error: '流式处理错误', done: true })));
+        controller.close();
+      }
+    },
+  });
+}
+
+// 直接 LLM 流式输出（简单请求）
+function directLLMStream(
+  userMessage: string,
+  conversationId: number | undefined,
+  systemPrompt: string | undefined
+) {
+  const { baseUrl, apiKey, model } = getOpenAIConfig();
+
+  const messages = [
+    { role: 'system' as const, content: systemPrompt || '你是小Q管家，一个有帮助的AI助手。' },
+    { role: 'user' as const, content: userMessage },
+  ];
+
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'start' })));
+
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: 0.8,
+            max_tokens: 2048,
+            stream: true,
+          }),
+        });
+
+        if (!response.ok || !response.body) {
+          controller.enqueue(new TextEncoder().encode(encodeSSE({ error: 'LLM API 连接失败', done: true })));
+          controller.close();
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+              try {
+                const parsed = JSON.parse(data);
+                const delta = parsed.choices?.[0]?.delta?.content;
+                if (delta) {
+                  fullContent += delta;
+                  controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'delta', content: delta })));
+                }
+              } catch {
+                // 忽略解析错误的行
+              }
+            }
+          }
+        }
+
+        // 持久化到数据库
+        if (conversationId && fullContent) {
+          try {
+            const client = getSupabaseClient();
+            const { data: botUser } = await client
+              .from('users')
+              .select('id')
+              .eq('nickname', '小 Q 管家')
+              .maybeSingle();
+
+            if (botUser) {
+              await client.from('messages').insert({
+                conversation_id: conversationId,
+                sender_id: botUser.id,
+                content: fullContent,
+                type: 'text',
+              });
+              await client
+                .from('conversations')
+                .update({ last_message_time: new Date().toISOString() })
+                .eq('id', conversationId);
+            }
+          } catch (persistError) {
+            console.error('Bot 流式回复持久化失败:', persistError);
+          }
+        }
+
+        controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'done', fullContent })));
+        controller.close();
+      } catch (error) {
+        console.error('SSE 流错误:', error);
+        controller.enqueue(new TextEncoder().encode(encodeSSE({ error: '流式处理错误', done: true })));
+        controller.close();
+      }
+    },
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const payload = await verifyToken(request);
@@ -32,7 +178,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const { message, conversation_id, system_prompt } = await request.json();
+    const body = await request.json();
+    const { message, conversation_id, system_prompt } = body;
     const userMessage = message?.trim();
 
     if (!userMessage) {
@@ -42,119 +189,32 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const { baseUrl, apiKey, model } = getOpenAIConfig();
+    // 检测是否为复杂请求，需要走 Agent 编排器
+    if (detectComplexRequest(userMessage)) {
+      // 复用非流式 /api/bot 的 Agent 编排器
+      const botRequest = new NextRequest(new URL('/api/bot', request.url), {
+        method: 'POST',
+        headers: request.headers,
+        body: JSON.stringify({ message: userMessage, conversation_id }),
+      });
 
-    // 构建消息
-    const messages: OpenAIMessage[] = [
-      { role: 'system', content: system_prompt || '你是小Q管家，一个有帮助的AI助手。' },
-      { role: 'user', content: userMessage },
-    ];
+      const botResponse = await botPost(botRequest);
+      const result = await botResponse.json();
 
-    // 创建流式响应
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          // 发送开始事件
-          controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'start' })));
+      // 将 Agent 结果转为 SSE 流
+      const stream = simulateTextStream(result.response || '', result.preview);
 
-          // 调用 LLM 流式 API
-          const response = await fetch(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-              model,
-              messages,
-              temperature: 0.8,
-              max_tokens: 2048,
-              stream: true,
-            }),
-          });
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        },
+      });
+    }
 
-          if (!response.ok) {
-            const errorText = await response.text();
-            controller.enqueue(new TextEncoder().encode(encodeSSE({ error: `LLM API error: ${response.status}`, done: true })));
-            controller.close();
-            return;
-          }
-
-          if (!response.body) {
-            controller.enqueue(new TextEncoder().encode(encodeSSE({ error: 'Empty response body', done: true })));
-            controller.close();
-            return;
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let fullContent = '';
-
-          // 读取流
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                if (data === '[DONE]') continue;
-
-                try {
-                  const parsed = JSON.parse(data);
-                  const delta = parsed.choices?.[0]?.delta?.content;
-                  if (delta) {
-                    fullContent += delta;
-                    controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'delta', content: delta })));
-                  }
-                } catch {
-                  // 忽略解析错误的行
-                }
-              }
-            }
-          }
-
-          // 持久化到数据库
-          if (conversation_id && fullContent) {
-            try {
-              const client = getSupabaseClient();
-              const { data: botUser } = await client
-                .from('users')
-                .select('id')
-                .eq('nickname', '小 Q 管家')
-                .maybeSingle();
-
-              if (botUser) {
-                await client.from('messages').insert({
-                  conversation_id,
-                  sender_id: botUser.id,
-                  content: fullContent,
-                  type: 'text',
-                });
-
-                await client
-                  .from('conversations')
-                  .update({ last_message_time: new Date().toISOString() })
-                  .eq('id', conversation_id);
-              }
-            } catch (persistError) {
-              console.error('Bot 流式回复持久化失败:', persistError);
-            }
-          }
-
-          // 发送完成事件
-          controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'done', fullContent })));
-          controller.close();
-        } catch (error) {
-          console.error('SSE 流错误:', error);
-          controller.enqueue(new TextEncoder().encode(encodeSSE({ error: '流式处理错误', done: true })));
-          controller.close();
-        }
-      },
-    });
+    // 简单请求：直接走 LLM 流式输出
+    const stream = directLLMStream(userMessage, conversation_id, system_prompt);
 
     return new Response(stream, {
       headers: {

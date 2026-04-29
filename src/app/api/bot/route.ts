@@ -1900,7 +1900,7 @@ ${memory.daily_notes || '（暂无）'}
   ], { temperature: 0.8 });
 
   const toolCalls = parseToolCalls(content);
-  let previewData: Record<string, unknown> | undefined;
+  const previewData: Record<string, unknown>[] = [];
 
   // 【防护层】只对"模糊的高危意图"且LLM未触发tool call时拦截
   // 如果用户意图明确（如"发给小明"、"发空间"），不拦截，让LLM自己处理
@@ -1918,7 +1918,7 @@ ${memory.daily_notes || '（暂无）'}
     for (const call of toolCalls) {
       const result = await executeTool(client, userId, call.name, call.arguments);
       if (highRiskTools.includes(call.name) && result && typeof result === 'object' && 'preview' in result) {
-        previewData = result.preview as Record<string, unknown>;
+        previewData.push(result.preview as Record<string, unknown>);
       }
       toolResults.push(`[${call.name} 结果] ${JSON.stringify(result)}`);
     }
@@ -1943,7 +1943,11 @@ ${memory.daily_notes || '（暂无）'}
   // 记录日志
   await addDailyNote(client, userId, `用户: ${userMessage}\n助手: ${content}`);
 
-  return { content: content || '好的~', preview: previewData, toolCalls: toolCalls.length > 0 ? toolCalls.map(c => ({ name: c.name, arguments: c.arguments })) : [] };
+  return {
+    content: content || '好的~',
+    preview: previewData.length > 0 ? { actions: previewData } : undefined,
+    toolCalls: toolCalls.length > 0 ? toolCalls.map(c => ({ name: c.name, arguments: c.arguments })) : [],
+  };
 }
 
 // ============================================
@@ -2024,7 +2028,7 @@ async function executePlan(
   userMessage: string
 ): Promise<{ content: string; preview?: Record<string, unknown>; toolCalls?: unknown[] }> {
   const stepResults: string[] = [];
-  let previewData: Record<string, unknown> | undefined;
+  const previewData: Record<string, unknown>[] = [];
   const allToolCalls: unknown[] = [];
 
   for (const step of plan.steps) {
@@ -2034,7 +2038,7 @@ async function executePlan(
         const result = await executeTool(client, userId, step.tool, step.params || {});
         const highRiskTools = ['send_message', 'publish_moment', 'generate_image', 'generate_video', 'delete_friend', 'leave_group', 'edit_moment', 'delete_moment'];
         if (highRiskTools.includes(step.tool) && result && typeof result === 'object' && 'preview' in result) {
-          previewData = result.preview as Record<string, unknown>;
+          previewData.push(result.preview as Record<string, unknown>);
         }
         stepResults.push(`步骤${step.step} (${step.action}): ${JSON.stringify(result)}`);
         allToolCalls.push({ name: step.tool, arguments: step.params, result });
@@ -2059,7 +2063,7 @@ ${stepResults.join('\n')}`;
 
   return {
     content: finalContent || '任务执行完成~',
-    preview: previewData,
+    preview: previewData.length > 0 ? { actions: previewData } : undefined,
     toolCalls: allToolCalls,
   };
 }

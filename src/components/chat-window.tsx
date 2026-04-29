@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +11,7 @@ import { Send, Image as ImageIcon, AtSign, X, ChevronDown, ChevronUp, Loader2 } 
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/lib/auth-context';
-import type { GroupMember, Message, SearchResult, User, BotResponse } from '@/lib/types';
+import type { GroupMember, Message, SearchResult, User, BotResponse, BotPreviewAction } from '@/lib/types';
 import { getMessageRenderer } from '@/components/message-renderers';
 
 interface ChatWindowProps {
@@ -216,6 +217,7 @@ export default function ChatWindow({
   const handleStreamBotResponse = async (userContent: string, convId: number, bot: User) => {
     const tempId = -Date.now();
     let fullContent = '';
+    let previewData: Record<string, unknown> | null = null;
 
     // 先添加一个空的 Bot 消息占位
     const tempMessage: Message = {
@@ -263,6 +265,10 @@ export default function ChatWindow({
                 setMessages(prev =>
                   prev.map(m => (m.id === tempId ? { ...m, content: fullContent } : m))
                 );
+              } else if (data.type === 'preview') {
+                // Agent 返回了 preview，记录到局部变量，循环结束后统一应用
+                previewData = data.preview as Record<string, unknown>;
+                fullContent = data.response || fullContent;
               } else if (data.type === 'done') {
                 fullContent = data.fullContent || fullContent;
               } else if (data.error) {
@@ -275,10 +281,21 @@ export default function ChatWindow({
         }
       }
 
-      // 更新最终内容
-      setMessages(prev =>
-        prev.map(m => (m.id === tempId ? { ...m, content: fullContent } : m))
-      );
+      // 循环结束后统一应用最终状态（避免 React 批处理导致 metadata 丢失）
+      setMessages(prev => {
+        const msg = prev.find(m => m.id === tempId);
+        if (!msg) return prev;
+
+        if (previewData) {
+          return prev.map(m =>
+            m.id === tempId
+              ? { ...msg, content: fullContent, metadata: { preview: previewData, isPreview: true } }
+              : m
+          );
+        }
+
+        return prev.map(m => (m.id === tempId ? { ...msg, content: fullContent } : m));
+      });
     } catch (error) {
       console.error('流式 Bot 回复失败:', error);
       // 显示错误消息
@@ -292,143 +309,93 @@ export default function ChatWindow({
     }
   };
 
+  // 执行单个 preview action
+  const executeSinglePreview = async (preview: BotPreviewAction): Promise<{ success: boolean; message?: string }> => {
+    if (!preview) return { success: false };
+
+    if (preview.action === 'send_message' && preview.target_id) {
+      const convType = preview.target_type === 'group' ? 'group' : 'private';
+      const conv = await conversationsApi.getOrCreate(convType, preview.target_id);
+      if (preview.content) {
+        await messagesApi.send(conv.conversation.id, 'text', preview.content);
+      }
+      if (preview.image_url) {
+        await messagesApi.send(conv.conversation.id, 'image', preview.image_url);
+      }
+      return { success: true, message: `已发送消息给 ${preview.target || ''}` };
+    }
+
+    if (preview.action === 'publish_moment') {
+      await momentsApi.publish(preview.content || '', preview.image_urls);
+      return { success: true, message: '已发布空间动态' };
+    }
+
+    if (preview.action === 'generate_image') {
+      const result = await botApi.executeTool('generate_image', { prompt: preview.prompt, style: preview.style });
+      if (result.imageUrl && conversationId) {
+        await messagesApi.send(conversationId, 'image', result.imageUrl);
+        return { success: true, message: '图片已生成并发送' };
+      }
+      return { success: false, message: result.error || '图片生成失败' };
+    }
+
+    if (preview.action === 'generate_video') {
+      const result = await botApi.executeTool('generate_video', { prompt: preview.prompt, duration: preview.duration });
+      if (result.videoUrl && conversationId) {
+        await messagesApi.send(conversationId, 'image', result.videoUrl);
+        return { success: true, message: '视频已生成并发送' };
+      }
+      return { success: false, message: result.error || '视频生成失败' };
+    }
+
+    if (preview.action === 'delete_friend' && preview.friend_id) {
+      const result = await botApi.executeTool('delete_friend', { friend_id: preview.friend_id });
+      if (result.success) {
+        return { success: true, message: `已删除好友「${preview.friend_name || preview.target || ''}」` };
+      }
+      return { success: false, message: result.error || '删除好友失败' };
+    }
+
+    if (preview.action === 'leave_group' && preview.group_id) {
+      const result = await botApi.executeTool('leave_group', { group_id: preview.group_id });
+      if (result.success) {
+        return { success: true, message: `已退出群聊「${preview.group_name || preview.target || ''}」` };
+      }
+      return { success: false, message: result.error || '退出群聊失败' };
+    }
+
+    if (preview.action === 'edit_moment' && preview.moment_id) {
+      await momentsApi.update(preview.moment_id, { content: preview.new_content, images: preview.new_images });
+      return { success: true, message: '动态已编辑' };
+    }
+
+    if (preview.action === 'delete_moment' && preview.moment_id) {
+      await momentsApi.delete(preview.moment_id);
+      return { success: true, message: '动态已删除' };
+    }
+
+    return { success: true, message: '操作已完成' };
+  };
+
   // 处理确认预览操作
   const handleConfirmAction = async (msg: Message) => {
-    const preview = msg.metadata?.preview as BotResponse['preview'];
-    if (!preview) return;
+    const previewData = msg.metadata?.preview as BotResponse['preview'];
+    if (!previewData) return;
+
+    // 支持 { actions: [...] } 格式（多步骤 Agent 编排返回）
+    const actions: BotPreviewAction[] = 'actions' in previewData && Array.isArray((previewData as Record<string, unknown>).actions)
+      ? (previewData as { actions: BotPreviewAction[] }).actions
+      : [previewData as BotPreviewAction];
+
+    const results: string[] = [];
 
     try {
-      if (preview.action === 'send_message' && preview.target_id) {
-        const convType = preview.target_type === 'group' ? 'group' : 'private';
-        const conv = await conversationsApi.getOrCreate(convType, preview.target_id);
-        // 支持文本+图片组合发送
-        if (preview.content) {
-          await messagesApi.send(conv.conversation.id, 'text', preview.content);
+      for (const action of actions) {
+        if (!action) continue;
+        const result = await executeSinglePreview(action);
+        if (result.message) {
+          results.push(result.message);
         }
-        if (preview.image_url) {
-          await messagesApi.send(conv.conversation.id, 'image', preview.image_url);
-        }
-        // 移除预览消息，刷新列表
-        setMessages(prev => prev.filter(m => m.id !== msg.id));
-        await fetchMessages();
-        return;
-      } else if (preview.action === 'publish_moment') {
-        await momentsApi.publish(preview.content || '', preview.image_urls);
-      } else if (preview.action === 'generate_image') {
-        const result = await botApi.executeTool('generate_image', { prompt: preview.prompt, style: preview.style });
-        if (result.imageUrl && conversationId) {
-          await messagesApi.send(conversationId, 'image', result.imageUrl);
-          // 移除预览消息，刷新列表显示图片
-          setMessages(prev => prev.filter(m => m.id !== msg.id));
-          await fetchMessages();
-          return;
-        } else {
-          // 图片生成失败
-          setMessages(prev => prev.filter(m => m.id !== msg.id));
-          const failMsg: Message = {
-            id: -Date.now() - 1,
-            conversation_id: conversationId!,
-            sender_id: botUser!.id,
-            sender_nickname: botUser!.nickname,
-            sender_avatar: botUser!.avatar_color,
-            type: 'text',
-            content: result.error || '图片生成失败了，请稍后再试~',
-            created_at: new Date().toISOString(),
-          };
-          setMessages(prev => [...prev, failMsg]);
-          return;
-        }
-      } else if (preview.action === 'generate_video') {
-        const result = await botApi.executeTool('generate_video', { prompt: preview.prompt, duration: preview.duration });
-        if (result.videoUrl && conversationId) {
-          await messagesApi.send(conversationId, 'image', result.videoUrl);
-          // 移除预览消息，刷新列表显示视频
-          setMessages(prev => prev.filter(m => m.id !== msg.id));
-          await fetchMessages();
-          return;
-        } else {
-          setMessages(prev => prev.filter(m => m.id !== msg.id));
-          const failMsg: Message = {
-            id: -Date.now() - 1,
-            conversation_id: conversationId!,
-            sender_id: botUser!.id,
-            sender_nickname: botUser!.nickname,
-            sender_avatar: botUser!.avatar_color,
-            type: 'text',
-            content: result.error || '视频生成失败了，请稍后再试~',
-            created_at: new Date().toISOString(),
-          };
-          setMessages(prev => [...prev, failMsg]);
-          return;
-        }
-      } else if (preview.action === 'delete_friend' && preview.friend_id) {
-        const result = await botApi.executeTool('delete_friend', { friend_id: preview.friend_id });
-        if (result.success) {
-          setMessages(prev => prev.filter(m => m.id !== msg.id));
-          const successMsg: Message = {
-            id: -Date.now() - 1,
-            conversation_id: conversationId!,
-            sender_id: botUser!.id,
-            sender_nickname: botUser!.nickname,
-            sender_avatar: botUser!.avatar_color,
-            type: 'text',
-            content: `已删除好友「${preview.friend_name || preview.target || ''}」`,
-            created_at: new Date().toISOString(),
-          };
-          setMessages(prev => [...prev, successMsg]);
-          return;
-        } else {
-          throw new Error(result.error || '删除好友失败');
-        }
-      } else if (preview.action === 'leave_group' && preview.group_id) {
-        const result = await botApi.executeTool('leave_group', { group_id: preview.group_id });
-        if (result.success) {
-          setMessages(prev => prev.filter(m => m.id !== msg.id));
-          const successMsg: Message = {
-            id: -Date.now() - 1,
-            conversation_id: conversationId!,
-            sender_id: botUser!.id,
-            sender_nickname: botUser!.nickname,
-            sender_avatar: botUser!.avatar_color,
-            type: 'text',
-            content: `已退出群聊「${preview.group_name || preview.target || ''}」`,
-            created_at: new Date().toISOString(),
-          };
-          setMessages(prev => [...prev, successMsg]);
-          return;
-        } else {
-          throw new Error(result.error || '退出群聊失败');
-        }
-      } else if (preview.action === 'edit_moment' && preview.moment_id) {
-        await momentsApi.update(preview.moment_id, { content: preview.new_content, images: preview.new_images });
-        setMessages(prev => prev.filter(m => m.id !== msg.id));
-        const successMsg: Message = {
-          id: -Date.now() - 1,
-          conversation_id: conversationId!,
-          sender_id: botUser!.id,
-          sender_nickname: botUser!.nickname,
-          sender_avatar: botUser!.avatar_color,
-          type: 'text',
-          content: '动态已编辑~',
-          created_at: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, successMsg]);
-        return;
-      } else if (preview.action === 'delete_moment' && preview.moment_id) {
-        await momentsApi.delete(preview.moment_id);
-        setMessages(prev => prev.filter(m => m.id !== msg.id));
-        const successMsg: Message = {
-          id: -Date.now() - 1,
-          conversation_id: conversationId!,
-          sender_id: botUser!.id,
-          sender_nickname: botUser!.nickname,
-          sender_avatar: botUser!.avatar_color,
-          type: 'text',
-          content: '动态已删除~',
-          created_at: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, successMsg]);
-        return;
       }
 
       // 移除预览消息，添加成功提示
@@ -440,10 +407,13 @@ export default function ChatWindow({
         sender_nickname: botUser!.nickname,
         sender_avatar: botUser!.avatar_color,
         type: 'text',
-        content: '操作已完成~',
+        content: results.join('\n') || '操作已完成~',
         created_at: new Date().toISOString(),
       };
       setMessages(prev => [...prev, successMessage]);
+
+      // 刷新消息列表（如果涉及发送消息到其他会话）
+      await fetchMessages();
     } catch (error) {
       console.error('确认操作失败:', error);
       // 移除预览消息，添加失败提示
