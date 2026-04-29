@@ -1,9 +1,239 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
-import { LLMClient, Config } from 'coze-coding-dev-sdk';
-import { ImageGenerationClient } from 'coze-coding-dev-sdk';
-import { VideoGenerationClient } from 'coze-coding-dev-sdk';
+
+// ============================================
+// OpenAI 兼容 LLM 客户端
+// ============================================
+
+interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+interface OpenAICompletionResponse {
+  choices: Array<{
+    message: {
+      role: string;
+      content: string;
+    };
+  }>;
+  error?: {
+    message: string;
+  };
+}
+
+function getOpenAIConfig() {
+  const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+  const apiKey = process.env.OPENAI_API_KEY || '';
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is not set');
+  }
+
+  return { baseUrl: baseUrl.replace(/\/$/, ''), apiKey, model };
+}
+
+// ============================================
+// 多用户隔离与并发控制
+// ============================================
+
+interface UserRequestLock {
+  promise: Promise<unknown>;
+  timestamp: number;
+}
+
+// 用户级请求队列：同一用户串行处理，防止并发冲突
+const userRequestLocks = new Map<number, UserRequestLock>();
+
+// 用户级限流：记录每个用户的请求次数和时间窗口
+interface RateLimitInfo {
+  count: number;
+  windowStart: number;
+}
+const userRateLimits = new Map<number, RateLimitInfo>();
+
+const RATE_LIMIT_MAX = 30; // 每窗口最多请求数
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1分钟窗口
+
+// 获取用户请求锁（确保同一用户串行处理）
+async function acquireUserLock<T>(userId: number, fn: () => Promise<T>): Promise<T> {
+  while (userRequestLocks.has(userId)) {
+    const lock = userRequestLocks.get(userId)!;
+    // 如果锁超过60秒，认为是死锁，强制释放
+    if (Date.now() - lock.timestamp > 60000) {
+      userRequestLocks.delete(userId);
+      break;
+    }
+    try {
+      await lock.promise;
+    } catch {
+      // 忽略前一个请求的错误
+    }
+  }
+
+  const promise = fn();
+  userRequestLocks.set(userId, { promise, timestamp: Date.now() });
+
+  try {
+    const result = await promise;
+    return result;
+  } finally {
+    userRequestLocks.delete(userId);
+  }
+}
+
+// 检查用户限流
+function checkRateLimit(userId: number): { allowed: boolean; remaining: number; resetIn: number } {
+  const now = Date.now();
+  let info = userRateLimits.get(userId);
+
+  if (!info || now - info.windowStart > RATE_LIMIT_WINDOW_MS) {
+    info = { count: 0, windowStart: now };
+    userRateLimits.set(userId, info);
+  }
+
+  if (info.count >= RATE_LIMIT_MAX) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetIn: Math.ceil((info.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000),
+    };
+  }
+
+  info.count++;
+  return {
+    allowed: true,
+    remaining: RATE_LIMIT_MAX - info.count,
+    resetIn: Math.ceil((info.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000),
+  };
+}
+
+async function callOpenAICompatible(
+  messages: OpenAIMessage[],
+  options: { temperature?: number; maxTokens?: number } = {}
+): Promise<string> {
+  const { baseUrl, apiKey, model } = getOpenAIConfig();
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: options.temperature ?? 0.8,
+      max_tokens: options.maxTokens ?? 2048,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`LLM API error: ${response.status} ${errorText}`);
+  }
+
+  const data = (await response.json()) as OpenAICompletionResponse;
+
+  if (data.error) {
+    throw new Error(`LLM API error: ${data.error.message}`);
+  }
+
+  return data.choices?.[0]?.message?.content || '';
+}
+
+// 流式调用 LLM，返回 ReadableStream
+async function callOpenAICompatibleStream(
+  messages: OpenAIMessage[],
+  options: { temperature?: number; maxTokens?: number } = {}
+): Promise<ReadableStream<Uint8Array>> {
+  const { baseUrl, apiKey, model } = getOpenAIConfig();
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: options.temperature ?? 0.8,
+      max_tokens: options.maxTokens ?? 2048,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`LLM API error: ${response.status} ${errorText}`);
+  }
+
+  if (!response.body) {
+    throw new Error('LLM API returned empty body');
+  }
+
+  return response.body;
+}
+
+// ============================================
+// Embedding 向量生成（用于语义检索）
+// ============================================
+
+async function generateEmbedding(text: string): Promise<number[]> {
+  try {
+    const { baseUrl, apiKey } = getOpenAIConfig();
+    // DashScope/OpenAI 兼容的 embedding API
+    const response = await fetch(`${baseUrl}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'text-embedding-v3', // DashScope 默认 embedding 模型
+        input: text,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Embedding API error:', await response.text());
+      return [];
+    }
+
+    const data = (await response.json()) as {
+      data?: Array<{ embedding: number[] }>;
+      error?: { message: string };
+    };
+
+    if (data.error) {
+      console.error('Embedding API error:', data.error.message);
+      return [];
+    }
+
+    return data.data?.[0]?.embedding || [];
+  } catch (error) {
+    console.error('生成 embedding 失败:', error);
+    return [];
+  }
+}
+
+// 余弦相似度计算
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
 
 // ============================================
 // OpenClaw 机制 - 工作区配置
@@ -26,8 +256,18 @@ const SOUL = `# SOUL.md - 行为准则
 - 可以有幽默感
 
 ## 能力范围（通过工具调用）
-- 搜索聊天记录、润色文字、代发消息、发布QQ空间动态
-- 读取/更新身份配置、读取/更新记忆
+- **查聊天记录**：翻旧账、搜关键词，一句话的事
+- **润色文字**：把话写得更好看、更自然
+- **代发消息**：帮用户给好友/群聊发消息，先润色再让用户确认后发送
+- **发QQ空间**：文案我帮你整，直接发（支持编辑和删除）
+- **删除好友**：从你的好友列表移除某人（高危操作，必须先预览再确认）
+- **退出群聊**：离开某个群聊（高危操作，必须先预览再确认）
+- **编辑动态**：修改已发布的QQ空间动态内容（高危操作，必须先预览再确认）
+- **删除动态**：删除已发布的QQ空间动态（高危操作，必须先预览再确认）
+- **AI画画**：出图出片，风格随便挑（写实/动漫/卡通/艺术）
+- **记东西**：你说过的偏好、重要信息，我都能记住
+- **创建定时任务**：发送课表自动拆解成定时提醒，课前发消息通知
+- **读取/更新身份配置、读取/更新记忆**
 `;
 
 // ============================================
@@ -38,20 +278,33 @@ const TOOLS_DESCRIPTION = `
 【可用工具】
 1. read_identity - 读取身份信息（我的名字、用户称呼）
 2. write_identity(bot_name, user_call_name) - 更新身份信息
-3. read_memory - 读取长期记忆和最近对话
+3. read_memory(query?) - 读取长期记忆和最近对话。如果提供了 query，会进行语义检索返回最相关的记忆
 4. write_memory(content) - 写入新的记忆
-5. search_messages(keyword, group_name?) - 搜索群聊消息
-6. get_my_messages(group_name?) - 获取用户自己发送的消息
-7. polish_text(text, style?) - 润色文本（style: casual/cute/formal）
-8. suggest_moment - 生成空间动态文案（仅建议，不发布）
-9. publish_moment(content?, image_urls?) - 发布动态到QQ空间
-10. get_user_info - 获取用户基本信息
-10. generate_image(prompt, style?) - 生成图片（style: realistic/anime/cartoon/art）
-11. generate_video(prompt, duration?) - 生成视频/动图（duration: 4-12秒）
-12. send_message(content, target_type?, target_id?, target_name?) - 发送消息
+5. update_memory_confidence(key, confidence_delta?, new_value?) - 更新记忆可信度（confidence_delta: +/-数值，低于0.3自动删除）
+6. search_messages(keyword, group_name?) - 搜索群聊消息
+7. get_my_messages(group_name?) - 获取用户自己发送的消息
+8. polish_text(text, style?) - 润色文本（style: casual/cute/formal）
+9. suggest_moment - 生成空间动态文案（仅建议，不发布）
+10. publish_moment(content?, image_urls?) - 发布动态到QQ空间
+11. get_user_info - 获取用户基本信息
+12. generate_image(prompt, style?) - 生成图片（style: realistic/anime/cartoon/art）
+13. generate_video(prompt, duration?) - 生成视频/动图（duration: 4-12秒）
+14. send_message(content, target_type?, target_id?, target_name?, preview?, image_url?) - 发送消息
     - target_type: "friend"(默认)/"group"
     - target_id: 直接指定目标ID
     - target_name: 指定目标名称（会自动查找）
+    - preview: true 时只返回预览，不实际发送（用于代发消息确认）
+    - image_url: 附带图片/表情包的URL（可选）
+15. create_task(name, cron_expression, description?, config?) - 创建定时任务
+    - name: 任务名称（如"上课提醒"）
+    - cron_expression: cron表达式（如"0 8 * * 1"表示每周一上午8点）
+    - description: 任务描述
+    - config: 额外配置对象，如 { message: "该上课了" }
+    - 任务类型自动识别：包含"提醒"->reminder，包含"发消息"->send_message，包含"动态"->post_moment
+16. delete_friend(friend_id?, friend_name?) - 删除好友（高危操作，需用户确认）
+17. leave_group(group_id?, group_name?) - 退出群聊（高危操作，需用户确认）
+18. edit_moment(moment_id?, keyword?, new_content?, new_images?) - 编辑已发布的QQ空间动态（高危操作，需用户确认）
+19. delete_moment(moment_id?, keyword?) - 删除已发布的QQ空间动态（高危操作，需用户确认）
 
 【工具响应格式】
 当需要使用工具时，在回复末尾添加：
@@ -65,6 +318,44 @@ const TOOLS_DESCRIPTION = `
 
 type SupabaseClient = Awaited<ReturnType<typeof getSupabaseClient>>;
 
+async function saveUserSetting(client: SupabaseClient, userId: number, key: string, value: string) {
+  const { data: existing, error: queryError } = await client
+    .from('user_settings')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('key', key)
+    .order('id', { ascending: true })
+    .limit(1);
+
+  if (queryError) {
+    throw new Error(`查询设置失败: ${queryError.message}`);
+  }
+
+  const updatedAt = new Date().toISOString();
+  const existingId = existing?.[0]?.id;
+
+  if (existingId) {
+    const { error } = await client
+      .from('user_settings')
+      .update({ value, updated_at: updatedAt })
+      .eq('id', existingId);
+
+    if (error) {
+      throw new Error(`更新设置失败: ${error.message}`);
+    }
+
+    return;
+  }
+
+  const { error } = await client
+    .from('user_settings')
+    .insert({ user_id: userId, key, value, updated_at: updatedAt });
+
+  if (error) {
+    throw new Error(`创建设置失败: ${error.message}`);
+  }
+}
+
 async function getSetting(client: SupabaseClient, userId: number, key: string): Promise<string | null> {
   const { data } = await client
     .from('user_settings')
@@ -76,16 +367,7 @@ async function getSetting(client: SupabaseClient, userId: number, key: string): 
 }
 
 async function setSetting(client: SupabaseClient, userId: number, key: string, value: string): Promise<void> {
-  await client
-    .from('user_settings')
-    .upsert({
-      user_id: userId,
-      key,
-      value,
-      updated_at: new Date().toISOString(),
-    }, {
-      onConflict: 'user_id,key',
-    });
+  await saveUserSetting(client, userId, key, value);
 }
 
 async function getDailyNotes(client: SupabaseClient, userId: number): Promise<Array<{ date: string; content: string }>> {
@@ -114,6 +396,139 @@ async function addDailyNote(client: SupabaseClient, userId: number, content: str
   const filtered = notes.filter(n => new Date(n.date) >= thirtyDaysAgo);
 
   await setSetting(client, userId, 'bot_daily_notes', JSON.stringify(filtered));
+}
+
+// ============================================
+// Structured Memory System
+// ============================================
+
+interface MemoryFact {
+  key: string;
+  value: string;
+  category: 'preference' | 'fact' | 'event' | 'relationship' | 'goal';
+  confidence: number;
+  created_at: string;
+  updated_at: string;
+}
+
+async function getMemoryFacts(client: SupabaseClient, userId: number): Promise<MemoryFact[]> {
+  const value = await getSetting(client, userId, 'bot_memory_facts');
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed as MemoryFact[];
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+async function setMemoryFacts(client: SupabaseClient, userId: number, facts: MemoryFact[]): Promise<void> {
+  await setSetting(client, userId, 'bot_memory_facts', JSON.stringify(facts));
+}
+
+async function extractFactsWithLLM(content: string): Promise<MemoryFact[]> {
+  const prompt = `从以下用户输入中提取关键事实。输出 JSON 数组，每个事实包含：
+- key: 简短的事实标签（如"饮食偏好"、"好友关系"）
+- value: 具体事实内容
+- category: 分类（preference/fact/event/relationship/goal）
+- confidence: 可信度（0-1）
+
+只提取明确的事实，不要猜测。如果输入不包含可提取的事实，返回空数组。
+
+用户输入：${content}
+
+请只输出 JSON 数组，不要包含任何其他文字。`;
+
+  const response = await callOpenAICompatible([
+    { role: 'system', content: '你是一个信息提取助手。请只输出纯 JSON 数组，不要包含 markdown 代码块或其他格式。' },
+    { role: 'user', content: prompt },
+  ], { temperature: 0.3, maxTokens: 1024 });
+
+  try {
+    const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) return [];
+
+    const now = new Date().toISOString();
+    return parsed
+      .filter((f: Record<string, unknown>) => f.key && f.value && f.category)
+      .map((f: Record<string, unknown>) => ({
+        key: String(f.key),
+        value: String(f.value),
+        category: (['preference', 'fact', 'event', 'relationship', 'goal'].includes(String(f.category))
+          ? String(f.category)
+          : 'fact') as MemoryFact['category'],
+        confidence: typeof f.confidence === 'number' ? Math.max(0, Math.min(1, f.confidence)) : 0.8,
+        created_at: now,
+        updated_at: now,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function summarizeMemoryIfNeeded(client: SupabaseClient, userId: number): Promise<void> {
+  const memory = await getSetting(client, userId, 'bot_memory') || '';
+  if (memory.length <= 4000) return;
+
+  const existingFacts = await getMemoryFacts(client, userId);
+  const prompt = `请从以下长期记忆文本中提取所有关键事实，输出 JSON 数组，每个事实包含：
+- key: 简短的事实标签
+- value: 具体事实内容
+- category: 分类（preference/fact/event/relationship/goal）
+- confidence: 可信度（0-1）
+
+记忆文本：
+${memory.substring(0, 8000)}
+
+请只输出 JSON 数组，不要包含任何其他文字。`;
+
+  const response = await callOpenAICompatible([
+    { role: 'system', content: '你是一个信息提取助手。请只输出纯 JSON 数组，不要包含 markdown 代码块或其他格式。' },
+    { role: 'user', content: prompt },
+  ], { temperature: 0.3, maxTokens: 2048 });
+
+  try {
+    const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed)) {
+      const now = new Date().toISOString();
+      const newFacts = parsed
+        .filter((f: Record<string, unknown>) => f.key && f.value && f.category)
+        .map((f: Record<string, unknown>) => ({
+          key: String(f.key),
+          value: String(f.value),
+          category: (['preference', 'fact', 'event', 'relationship', 'goal'].includes(String(f.category))
+            ? String(f.category)
+            : 'fact') as MemoryFact['category'],
+          confidence: typeof f.confidence === 'number' ? Math.max(0, Math.min(1, f.confidence)) : 0.6,
+          created_at: now,
+          updated_at: now,
+        }));
+
+      const factMap = new Map<string, MemoryFact>();
+      for (const f of existingFacts) {
+        factMap.set(f.key, f);
+      }
+      for (const f of newFacts) {
+        if (factMap.has(f.key)) {
+          const existing = factMap.get(f.key)!;
+          existing.value = f.value;
+          existing.confidence = Math.max(existing.confidence, f.confidence);
+          existing.updated_at = now;
+        } else {
+          factMap.set(f.key, f);
+        }
+      }
+
+      await setMemoryFacts(client, userId, Array.from(factMap.values()));
+    }
+  } catch (error) {
+    console.error('记忆总结失败:', error);
+  }
+
+  await setSetting(client, userId, 'bot_memory', '# MEMORY.md\n(已自动总结为结构化记忆)\n');
 }
 
 // Tool: read_identity
@@ -158,23 +573,198 @@ async function toolWriteIdentity(client: SupabaseClient, userId: number, botName
   return { success: true, message };
 }
 
-// Tool: read_memory
-async function toolReadMemory(client: SupabaseClient, userId: number) {
-  const memory = await getSetting(client, userId, 'bot_memory') || '(暂无长期记忆)';
+// Tool: read_memory（支持向量语义检索）
+async function toolReadMemory(client: SupabaseClient, userId: number, query?: string) {
   const notes = await getDailyNotes(client, userId);
+
+  // 【向量记忆检索】如果提供了 query，进行语义搜索
+  if (query && query.trim()) {
+    try {
+      const queryEmbedding = await generateEmbedding(query.trim());
+      if (queryEmbedding.length > 0) {
+        const { data: memories } = await client
+          .from('memory_embeddings')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (memories && memories.length > 0) {
+          // 计算相似度并排序
+          const scored = memories.map(m => {
+            let emb: number[] = [];
+            try {
+              emb = JSON.parse(m.embedding);
+            } catch {
+              emb = [];
+            }
+            return {
+              ...m,
+              similarity: cosineSimilarity(queryEmbedding, emb),
+            };
+          });
+
+          scored.sort((a, b) => b.similarity - a.similarity);
+          const topK = scored.slice(0, 5).filter(m => m.similarity > 0.7);
+
+          if (topK.length > 0) {
+            const categoryNames: Record<string, string> = {
+              preference: '偏好',
+              fact: '事实',
+              event: '事件',
+              relationship: '关系',
+              goal: '目标',
+            };
+
+            const parts = topK.map(m =>
+              `- [${categoryNames[m.category] || m.category}] ${m.content} (可信度: ${m.confidence}%, 相似度: ${Math.round(m.similarity * 100)}%)`
+            );
+
+            return {
+              memory: `【语义检索结果 - 与「${query}」相关的记忆】\n${parts.join('\n')}`,
+              daily_notes: notes.slice(-5).map(n => `[${n.date}] ${n.content}`).join('\n\n'),
+            };
+          }
+        }
+      }
+    } catch (error) {
+      console.error('向量记忆检索失败:', error);
+    }
+  }
+
+  // Fallback：读取结构化事实
+  const facts = await getMemoryFacts(client, userId);
+  let memoryText: string;
+  if (facts.length > 0) {
+    const categories: Record<string, string[]> = {};
+    for (const f of facts) {
+      if (!categories[f.category]) categories[f.category] = [];
+      categories[f.category].push(`- ${f.key}: ${f.value} (可信度: ${Math.round(f.confidence * 100)}%)`);
+    }
+
+    const categoryNames: Record<string, string> = {
+      preference: '偏好',
+      fact: '事实',
+      event: '事件',
+      relationship: '关系',
+      goal: '目标',
+    };
+
+    const parts: string[] = [];
+    for (const [cat, items] of Object.entries(categories)) {
+      parts.push(`## ${categoryNames[cat] || cat}\n${items.join('\n')}`);
+    }
+    memoryText = parts.join('\n\n');
+  } else {
+    memoryText = await getSetting(client, userId, 'bot_memory') || '(暂无长期记忆)';
+  }
+
   return {
-    memory,
+    memory: memoryText,
     daily_notes: notes.slice(-5).map(n => `[${n.date}] ${n.content}`).join('\n\n'),
   };
 }
 
-// Tool: write_memory
+// Tool: write_memory（支持向量存储）
 async function toolWriteMemory(client: SupabaseClient, userId: number, content: string) {
   const memory = await getSetting(client, userId, 'bot_memory') || '# MEMORY.md\n';
   const today = new Date().toISOString().split('T')[0];
   const newMemory = `${memory}\n\n## ${today}\n- ${content}`;
   await setSetting(client, userId, 'bot_memory', newMemory);
+
+  try {
+    const extractedFacts = await extractFactsWithLLM(content);
+    if (extractedFacts.length > 0) {
+      const existingFacts = await getMemoryFacts(client, userId);
+      const factMap = new Map<string, MemoryFact>();
+
+      for (const f of existingFacts) {
+        factMap.set(f.key, f);
+      }
+
+      const now = new Date().toISOString();
+      for (const f of extractedFacts) {
+        if (factMap.has(f.key)) {
+          const existing = factMap.get(f.key)!;
+          existing.value = f.value;
+          existing.category = f.category;
+          existing.confidence = Math.max(existing.confidence, f.confidence);
+          existing.updated_at = now;
+        } else {
+          factMap.set(f.key, f);
+        }
+      }
+
+      await setMemoryFacts(client, userId, Array.from(factMap.values()));
+
+      // 【向量存储】将新提取的事实写入向量记忆表
+      try {
+        for (const f of extractedFacts) {
+          const embedding = await generateEmbedding(`${f.key}: ${f.value}`);
+          if (embedding.length > 0) {
+            await client.from('memory_embeddings').insert({
+              user_id: userId,
+              content: `${f.key}: ${f.value}`,
+              embedding: JSON.stringify(embedding),
+              category: f.category,
+              confidence: Math.round(f.confidence * 100),
+              source: 'llm_extraction',
+            });
+          }
+        }
+      } catch (embError) {
+        console.error('向量存储写入失败:', embError);
+      }
+    }
+  } catch (error) {
+    console.error('结构化记忆提取失败:', error);
+  }
+
+  try {
+    await summarizeMemoryIfNeeded(client, userId);
+  } catch (error) {
+    console.error('记忆总结检查失败:', error);
+  }
+
   return { success: true };
+}
+
+// Tool: update_memory_confidence
+async function toolUpdateMemoryConfidence(
+  client: SupabaseClient,
+  userId: number,
+  key: string,
+  confidenceDelta?: number,
+  newValue?: string
+) {
+  const facts = await getMemoryFacts(client, userId);
+  const idx = facts.findIndex(f => f.key === key);
+
+  if (idx === -1) {
+    return { success: false, error: `未找到事实: ${key}` };
+  }
+
+  const fact = facts[idx];
+  const now = new Date().toISOString();
+
+  if (confidenceDelta !== undefined) {
+    fact.confidence = Math.max(0, Math.min(1, fact.confidence + confidenceDelta));
+  }
+
+  if (newValue !== undefined) {
+    fact.value = newValue;
+    fact.updated_at = now;
+  }
+
+  if (fact.confidence < 0.3) {
+    facts.splice(idx, 1);
+    await setMemoryFacts(client, userId, facts);
+    return { success: true, message: `已删除可信度过低的事实: ${key}` };
+  }
+
+  facts[idx] = fact;
+  await setMemoryFacts(client, userId, facts);
+  return { success: true, message: `已更新事实: ${key}` };
 }
 
 // Tool: search_messages
@@ -334,31 +924,43 @@ async function toolSuggestMoment() {
   return { suggestions: ideas };
 }
 
-// Tool: send_message - 发送消息
+// Tool: send_message - 发送消息（支持预览模式，支持图片）
 async function toolSendMessage(
   client: SupabaseClient,
   userId: number,
   content: string,
   targetType?: string,
   targetId?: number,
-  targetName?: string
+  targetName?: string,
+  preview?: boolean,
+  imageUrl?: string
 ) {
   try {
-    let conversationId: number | null = null;
     let targetDisplayName = '';
+    let resolvedTargetId: number | null = null;
+    let resolvedTargetType: 'friend' | 'group' = targetType === 'group' ? 'group' : 'friend';
+    let conversationId: number | null = null;
 
     if (targetId) {
       // 直接指定目标ID
       const { data: conv } = await client
         .from('conversations')
-        .select('id')
+        .select('id, type')
         .eq('user_id', userId)
         .eq('target_id', targetId)
         .single();
 
       if (conv) {
         conversationId = conv.id;
-        targetDisplayName = `ID:${targetId}`;
+        resolvedTargetId = targetId;
+        resolvedTargetType = conv.type === 'group' ? 'group' : 'friend';
+        if (resolvedTargetType === 'group') {
+          const { data: group } = await client.from('groups').select('name').eq('id', targetId).single();
+          targetDisplayName = group?.name || `群:${targetId}`;
+        } else {
+          const { data: user } = await client.from('users').select('nickname').eq('id', targetId).single();
+          targetDisplayName = user?.nickname || `好友:${targetId}`;
+        }
       }
     } else if (targetName) {
       // 根据名称查找
@@ -384,6 +986,8 @@ async function toolSendMessage(
           if (conv) {
             conversationId = conv.id;
             targetDisplayName = targetGroup.name;
+            resolvedTargetId = targetGroup.id;
+            resolvedTargetType = 'group';
           }
         }
       } else {
@@ -416,6 +1020,8 @@ async function toolSendMessage(
             if (conv) {
               conversationId = conv.id;
               targetDisplayName = targetUser.nickname;
+              resolvedTargetId = targetUser.id;
+              resolvedTargetType = 'friend';
             }
           }
         }
@@ -432,6 +1038,8 @@ async function toolSendMessage(
 
       if (conv) {
         conversationId = conv.id;
+        resolvedTargetId = conv.target_id;
+        resolvedTargetType = conv.type === 'group' ? 'group' : 'friend';
         if (conv.type === 'group') {
           const { data: group } = await client
             .from('groups')
@@ -450,24 +1058,52 @@ async function toolSendMessage(
       }
     }
 
-    if (!conversationId) {
+    if (!conversationId || !resolvedTargetId) {
       return { success: false, error: '找不到目标会话' };
     }
 
-    // 发送消息
-    const { data: message } = await client
-      .from('messages')
-      .insert({
+    // 预览模式：只返回预览信息，不实际发送
+    if (preview) {
+      return {
+        preview: {
+          action: 'send_message' as const,
+          content,
+          target: targetDisplayName,
+          target_type: resolvedTargetType,
+          target_id: resolvedTargetId,
+          conversation_id: conversationId,
+          image_url: imageUrl,
+        }
+      };
+    }
+
+    // 实际发送消息（支持图片）
+    const inserts = [];
+    if (content && content.trim()) {
+      inserts.push({
         conversation_id: conversationId,
         sender_id: userId,
         content,
         type: 'text',
-      })
-      .select('id, created_at')
-      .single();
+      });
+    }
+    if (imageUrl) {
+      inserts.push({
+        conversation_id: conversationId,
+        sender_id: userId,
+        content: imageUrl,
+        type: 'image',
+      });
+    }
+
+    const { data: messages } = await client
+      .from('messages')
+      .insert(inserts)
+      .select('id, created_at');
+
+    const message = messages?.[0];
 
     if (message) {
-      // 更新会话时间
       await client
         .from('conversations')
         .update({ last_message_time: new Date().toISOString() })
@@ -488,53 +1124,99 @@ async function toolSendMessage(
   }
 }
 
-// Tool: publish_moment - 发布空间动态
+// Tool: publish_moment - 返回发布动态预览（不实际发布）
 async function toolPublishMoment(
-  client: SupabaseClient,
-  userId: number,
+  _client: SupabaseClient,
+  _userId: number,
   content?: string,
   imageUrls?: string[]
 ) {
+  // 如果没有提供内容，生成一个
+  let momentContent = content;
+  if (!momentContent) {
+    const ideas = [
+      '摸鱼一时爽，一直摸鱼一直爽~',
+      '今日份快乐：摸鱼打卡！',
+      '假装很努力中...其实在摸鱼',
+      '摸鱼使我快乐，快乐使我摸鱼~',
+    ];
+    momentContent = ideas[Math.floor(Math.random() * ideas.length)];
+  }
+
+  return {
+    preview: {
+      action: 'publish_moment' as const,
+      content: momentContent,
+      image_urls: imageUrls || [],
+    }
+  };
+}
+
+// Tool: create_task - 创建定时任务
+async function toolCreateTask(
+  client: SupabaseClient,
+  userId: number,
+  name: string,
+  cronExpression: string,
+  description?: string,
+  config?: Record<string, unknown>
+) {
   try {
-    // 如果没有提供内容，生成一个
-    let momentContent = content;
-    if (!momentContent) {
-      const ideas = [
-        '摸鱼一时爽，一直摸鱼一直爽~',
-        '今日份快乐：摸鱼打卡！',
-        '假装很努力中...其实在摸鱼',
-        '摸鱼使我快乐，快乐使我摸鱼~',
-      ];
-      momentContent = ideas[Math.floor(Math.random() * ideas.length)];
+    // 验证 cron 表达式
+    const { CronJob } = await import('cron');
+    let nextRunAt: string | null = null;
+    try {
+      const job = new CronJob(cronExpression, () => {});
+      const nextRun = job.nextDate();
+      nextRunAt = nextRun ? nextRun.toISO() : null;
+      job.stop();
+    } catch {
+      return { success: false, error: '无效的 cron 表达式' };
     }
 
-    const { data: moment, error } = await client
-      .from('moments')
+    // 自动识别任务类型
+    let taskType = 'reminder';
+    const desc = description || name || '';
+    if (desc.includes('发消息') || desc.includes('发送') || (config && config.conversation_id)) {
+      taskType = 'send_message';
+    } else if (desc.includes('动态') || desc.includes('空间') || desc.includes('说说')) {
+      taskType = 'post_moment';
+    }
+
+    const { data: task, error } = await client
+      .from('scheduled_tasks')
       .insert({
         user_id: userId,
-        content: momentContent,
-        images: imageUrls || [],
-        like_count: 0,
-        comment_count: 0,
+        name,
+        description: description || '',
+        cron_expression: cronExpression,
+        task_type: taskType,
+        config: config || {},
+        enabled: true,
+        next_run_at: nextRunAt,
       })
-      .select('id, created_at')
+      .select('id, name, cron_expression, task_type, next_run_at')
       .single();
 
     if (error) {
-      console.error('发布动态失败:', error);
-      return { success: false, error: '发布失败' };
+      console.error('创建定时任务失败:', error);
+      return { success: false, error: `创建失败: ${error.message}` };
     }
 
     return {
       success: true,
-      message: '动态已发布',
-      moment_id: moment.id,
-      content: momentContent,
-      time: new Date(moment.created_at).toLocaleString('zh-CN'),
+      message: `已创建定时任务「${task.name}」`,
+      task: {
+        id: task.id,
+        name: task.name,
+        cron_expression: task.cron_expression,
+        task_type: task.task_type,
+        next_run_at: task.next_run_at,
+      },
     };
   } catch (error) {
-    console.error('发布动态失败:', error);
-    return { success: false, error: '发布动态时发生错误' };
+    console.error('创建定时任务失败:', error);
+    return { success: false, error: '创建定时任务时发生错误' };
   }
 }
 
@@ -548,12 +1230,9 @@ async function toolGetUserInfo(client: SupabaseClient, userId: number) {
   return { nickname: user?.nickname || '用户', qq_number: user?.qq_number || '' };
 }
 
-// Tool: generate_image - 生成图片
-async function toolGenerateImage(prompt: string, style = 'realistic'): Promise<{ imageUrl: string | null; error?: string }> {
+// 实际生成图片（DashScope 原生异步 API）
+async function doGenerateImage(prompt: string, style = 'realistic'): Promise<{ imageUrl: string | null; error?: string }> {
   try {
-    const config = new Config();
-    const imageClient = new ImageGenerationClient(config);
-
     // 根据风格优化提示词
     let enhancedPrompt = prompt;
     if (style === 'anime') {
@@ -564,51 +1243,466 @@ async function toolGenerateImage(prompt: string, style = 'realistic'): Promise<{
       enhancedPrompt = `Digital art style, ${prompt}, artistic, creative`;
     }
 
-    const response = await imageClient.generate({
-      prompt: enhancedPrompt,
-      size: '2K',
-      watermark: false,
+    const { apiKey } = getOpenAIConfig();
+    // 通义万相模型名称映射（用户可能配置错误的模型名）
+    const modelMapping: Record<string, string> = {
+      'qwen-image-2.0': 'wanx2.1-t2i-turbo',
+      'qwen-image': 'wanx2.1-t2i-turbo',
+      'dall-e-3': 'wanx2.1-t2i-turbo',
+    };
+    const configuredModel = process.env.OPENAI_IMAGE_MODEL || 'wanx2.1-t2i-turbo';
+    const imageModel = modelMapping[configuredModel] || configuredModel;
+
+    // 1. 提交异步任务
+    const submitRes = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'X-DashScope-Async': 'enable',
+      },
+      body: JSON.stringify({
+        model: imageModel,
+        input: { prompt: enhancedPrompt },
+        parameters: { size: '1024*1024', n: 1 },
+      }),
     });
 
-    const helper = imageClient.getResponseHelper(response);
-
-    if (helper.success && helper.imageUrls.length > 0) {
-      return { imageUrl: helper.imageUrls[0] };
+    if (!submitRes.ok) {
+      const errorText = await submitRes.text();
+      console.error('DashScope image submit error:', errorText);
+      return { imageUrl: null, error: '图片生成失败' };
     }
 
-    return { imageUrl: null, error: helper.errorMessages[0] || '生成失败' };
+    const submitData = (await submitRes.json()) as {
+      output?: { task_id?: string };
+      error?: { message: string };
+    };
+
+    const taskId = submitData.output?.task_id;
+    if (!taskId) {
+      console.error('DashScope image submit missing task_id');
+      return { imageUrl: null, error: '图片生成失败' };
+    }
+
+    // 2. 轮询任务结果
+    const maxAttempts = 30;
+    const pollIntervalMs = 2000;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+      const statusRes = await fetch(`https://dashscope.aliyuncs.com/api/v1/tasks/${taskId}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      });
+
+      if (!statusRes.ok) {
+        const errorText = await statusRes.text();
+        console.error('DashScope task status error:', errorText);
+        return { imageUrl: null, error: '图片生成失败' };
+      }
+
+      const statusData = (await statusRes.json()) as {
+        output?: {
+          task_status?: string;
+          results?: Array<{ url?: string }>;
+        };
+        error?: { message: string };
+      };
+
+      if (statusData.error) {
+        console.error('DashScope task error:', statusData.error.message);
+        return { imageUrl: null, error: '图片生成失败' };
+      }
+
+      const taskStatus = statusData.output?.task_status;
+
+      if (taskStatus === 'SUCCEEDED') {
+        const imageUrl = statusData.output?.results?.[0]?.url;
+        if (imageUrl) {
+          return { imageUrl };
+        }
+        return { imageUrl: null, error: '图片生成失败' };
+      }
+
+      if (taskStatus === 'FAILED') {
+        console.error('DashScope image task failed');
+        return { imageUrl: null, error: '图片生成失败' };
+      }
+
+      // 其他状态（PENDING/RUNNING/SUSPENDED 等）继续轮询
+    }
+
+    // 超时
+    console.error('DashScope image task polling timeout');
+    return { imageUrl: null, error: '图片生成失败' };
   } catch (error) {
     console.error('生成图片失败:', error);
-    return { imageUrl: null, error: '生成图片时发生错误' };
+    return { imageUrl: null, error: '图片生成失败' };
   }
 }
 
-// Tool: generate_video - 生成视频/动图
-async function toolGenerateVideo(prompt: string, duration = 5): Promise<{ videoUrl: string | null; error?: string }> {
+// 实际生成视频/动图（当前平台暂不支持）
+async function doGenerateVideo(_prompt: string, _duration_unused = 5): Promise<{ videoUrl: string | null; error?: string }> {
+  return { videoUrl: null, error: '当前平台暂不支持视频生成' };
+}
+
+// Tool: generate_image - 返回生成图片预览（不实际生成）
+async function toolGenerateImage(prompt: string, style = 'realistic') {
+  return {
+    preview: {
+      action: 'generate_image' as const,
+      prompt,
+      style,
+    }
+  };
+}
+
+// Tool: generate_video - 返回生成视频预览（不实际生成）
+async function toolGenerateVideo(prompt: string, duration = 5) {
+  return {
+    preview: {
+      action: 'generate_video' as const,
+      prompt,
+      duration,
+    }
+  };
+}
+
+// Tool: delete_friend - 删除好友预览
+async function toolDeleteFriend(
+  client: SupabaseClient,
+  userId: number,
+  friendId?: number,
+  friendName?: string
+) {
   try {
-    const config = new Config();
-    const videoClient = new VideoGenerationClient(config);
+    let targetFriendId: number | null = null;
+    let targetFriendName = '';
 
-    const response = await videoClient.videoGeneration(
-      [{ type: 'text', text: prompt }],
-      {
-        model: 'doubao-seedance-1-5-pro-251215',
-        duration: Math.min(Math.max(duration, 4), 12), // 限制在 4-12 秒
-        ratio: '1:1', // 方形适合表情包/GIF
-        resolution: '720p',
-        watermark: false,
-        generateAudio: false, // 静默视频更适合 GIF
+    if (friendId) {
+      const { data: friendRow } = await client
+        .from('friends')
+        .select('friend_id')
+        .eq('user_id', userId)
+        .eq('friend_id', friendId)
+        .single();
+
+      if (!friendRow) {
+        return { success: false, error: '该用户不在你的好友列表中' };
       }
-    );
 
-    if (response.videoUrl) {
-      return { videoUrl: response.videoUrl };
+      targetFriendId = friendId;
+      const { data: user } = await client
+        .from('users')
+        .select('nickname')
+        .eq('id', friendId)
+        .single();
+      targetFriendName = user?.nickname || `好友:${friendId}`;
+    } else if (friendName) {
+      const { data: friends } = await client
+        .from('friends')
+        .select('friend_id')
+        .eq('user_id', userId);
+
+      if (!friends || friends.length === 0) {
+        return { success: false, error: '找不到该好友' };
+      }
+
+      const friendIds = friends.map((f: { friend_id: number }) => f.friend_id);
+      const { data: users } = await client
+        .from('users')
+        .select('id, nickname')
+        .in('id', friendIds)
+        .ilike('nickname', `%${friendName}%`);
+
+      const targetUser = users?.[0];
+      if (!targetUser) {
+        return { success: false, error: '找不到该好友' };
+      }
+
+      targetFriendId = targetUser.id;
+      targetFriendName = targetUser.nickname;
+    } else {
+      return { success: false, error: '请指定好友ID或好友名称' };
     }
 
-    return { videoUrl: null, error: response.response?.error_message || '生成失败' };
+    return {
+      preview: {
+        action: 'delete_friend' as const,
+        friend_id: targetFriendId,
+        friend_name: targetFriendName,
+      }
+    };
   } catch (error) {
-    console.error('生成视频失败:', error);
-    return { videoUrl: null, error: '生成视频时发生错误' };
+    console.error('删除好友预览失败:', error);
+    return { success: false, error: '获取好友信息时发生错误' };
+  }
+}
+
+// Tool: leave_group - 退出群聊预览
+async function toolLeaveGroup(
+  client: SupabaseClient,
+  userId: number,
+  groupId?: number,
+  groupName?: string
+) {
+  try {
+    let targetGroupId: number | null = null;
+    let targetGroupName = '';
+
+    if (groupId) {
+      const { data: membership } = await client
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', userId)
+        .eq('group_id', groupId)
+        .single();
+
+      if (!membership) {
+        return { success: false, error: '你不在该群聊中' };
+      }
+
+      targetGroupId = groupId;
+      const { data: group } = await client
+        .from('groups')
+        .select('name')
+        .eq('id', groupId)
+        .single();
+      targetGroupName = group?.name || `群:${groupId}`;
+    } else if (groupName) {
+      const { data: memberships } = await client
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', userId);
+
+      if (!memberships || memberships.length === 0) {
+        return { success: false, error: '你还没有加入任何群聊' };
+      }
+
+      const groupIds = memberships.map((m: { group_id: number }) => m.group_id);
+      const { data: groups } = await client
+        .from('groups')
+        .select('id, name')
+        .in('id', groupIds)
+        .ilike('name', `%${groupName}%`);
+
+      const targetGroup = groups?.[0];
+      if (!targetGroup) {
+        return { success: false, error: '找不到该群聊' };
+      }
+
+      targetGroupId = targetGroup.id;
+      targetGroupName = targetGroup.name;
+    } else {
+      return { success: false, error: '请指定群ID或群名称' };
+    }
+
+    return {
+      preview: {
+        action: 'leave_group' as const,
+        group_id: targetGroupId,
+        group_name: targetGroupName,
+      }
+    };
+  } catch (error) {
+    console.error('退出群聊预览失败:', error);
+    return { success: false, error: '获取群聊信息时发生错误' };
+  }
+}
+
+// Tool: edit_moment - 编辑动态预览
+async function toolEditMoment(
+  client: SupabaseClient,
+  userId: number,
+  momentId?: number,
+  keyword?: string,
+  newContent?: string,
+  newImages?: string[]
+) {
+  try {
+    let targetMoment: { id: number; content: string; image_urls: string[] | null; created_at: string } | null = null;
+
+    if (momentId) {
+      const { data } = await client
+        .from('moments')
+        .select('id, content, image_urls, created_at')
+        .eq('id', momentId)
+        .eq('user_id', userId)
+        .single();
+      targetMoment = data || null;
+    } else if (keyword) {
+      const { data } = await client
+        .from('moments')
+        .select('id, content, image_urls, created_at')
+        .eq('user_id', userId)
+        .ilike('content', `%${keyword}%`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      targetMoment = data || null;
+    } else {
+      return { success: false, error: '请指定动态ID或关键词' };
+    }
+
+    if (!targetMoment) {
+      return { success: false, error: '找不到要编辑的动态' };
+    }
+
+    return {
+      preview: {
+        action: 'edit_moment' as const,
+        moment_id: targetMoment.id,
+        old_content: targetMoment.content,
+        new_content: newContent || targetMoment.content,
+        new_images: newImages || targetMoment.image_urls || [],
+      }
+    };
+  } catch (error) {
+    console.error('编辑动态预览失败:', error);
+    return { success: false, error: '获取动态信息时发生错误' };
+  }
+}
+
+// Tool: delete_moment - 删除动态预览
+async function toolDeleteMoment(
+  client: SupabaseClient,
+  userId: number,
+  momentId?: number,
+  keyword?: string
+) {
+  try {
+    let targetMoment: { id: number; content: string; created_at: string } | null = null;
+
+    if (momentId) {
+      const { data } = await client
+        .from('moments')
+        .select('id, content, created_at')
+        .eq('id', momentId)
+        .eq('user_id', userId)
+        .single();
+      targetMoment = data || null;
+    } else if (keyword) {
+      const { data } = await client
+        .from('moments')
+        .select('id, content, created_at')
+        .eq('user_id', userId)
+        .ilike('content', `%${keyword}%`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      targetMoment = data || null;
+    } else {
+      return { success: false, error: '请指定动态ID或关键词' };
+    }
+
+    if (!targetMoment) {
+      return { success: false, error: '找不到要删除的动态' };
+    }
+
+    return {
+      preview: {
+        action: 'delete_moment' as const,
+        moment_id: targetMoment.id,
+        content: targetMoment.content,
+      }
+    };
+  } catch (error) {
+    console.error('删除动态预览失败:', error);
+    return { success: false, error: '获取动态信息时发生错误' };
+  }
+}
+
+// Direct execution helpers
+async function doDeleteFriend(client: SupabaseClient, userId: number, friendId: number) {
+  try {
+    await client
+      .from('friends')
+      .delete()
+      .eq('user_id', userId)
+      .eq('friend_id', friendId);
+
+    await client
+      .from('friends')
+      .delete()
+      .eq('user_id', friendId)
+      .eq('friend_id', userId);
+
+    return { success: true, message: '已删除好友' };
+  } catch (error) {
+    console.error('删除好友失败:', error);
+    return { success: false, error: '删除好友时发生错误' };
+  }
+}
+
+async function doLeaveGroup(client: SupabaseClient, userId: number, groupId: number) {
+  try {
+    const { error } = await client
+      .from('group_members')
+      .delete()
+      .eq('user_id', userId)
+      .eq('group_id', groupId);
+
+    if (error) {
+      return { success: false, error: `退出群聊失败: ${error.message}` };
+    }
+    return { success: true, message: '已退出群聊' };
+  } catch (error) {
+    console.error('退出群聊失败:', error);
+    return { success: false, error: '退出群聊时发生错误' };
+  }
+}
+
+async function doEditMoment(
+  client: SupabaseClient,
+  userId: number,
+  momentId: number,
+  newContent?: string,
+  newImages?: string[]
+) {
+  try {
+    const updates: { content?: string; image_urls?: string[]; updated_at: string } = {
+      updated_at: new Date().toISOString(),
+    };
+    if (newContent !== undefined) updates.content = newContent;
+    if (newImages !== undefined) updates.image_urls = newImages;
+
+    const { error } = await client
+      .from('moments')
+      .update(updates)
+      .eq('id', momentId)
+      .eq('user_id', userId);
+
+    if (error) {
+      return { success: false, error: `编辑动态失败: ${error.message}` };
+    }
+    return { success: true, message: '动态已编辑' };
+  } catch (error) {
+    console.error('编辑动态失败:', error);
+    return { success: false, error: '编辑动态时发生错误' };
+  }
+}
+
+async function doDeleteMoment(client: SupabaseClient, userId: number, momentId: number) {
+  try {
+    await client.from('moment_comments').delete().eq('moment_id', momentId);
+    await client.from('moment_likes').delete().eq('moment_id', momentId);
+    const { error } = await client
+      .from('moments')
+      .delete()
+      .eq('id', momentId)
+      .eq('user_id', userId);
+
+    if (error) {
+      return { success: false, error: `删除动态失败: ${error.message}` };
+    }
+    return { success: true, message: '动态已删除' };
+  } catch (error) {
+    console.error('删除动态失败:', error);
+    return { success: false, error: '删除动态时发生错误' };
   }
 }
 
@@ -617,8 +1711,9 @@ async function executeTool(client: SupabaseClient, userId: number, name: string,
   switch (name) {
     case 'read_identity': return toolReadIdentity(client, userId);
     case 'write_identity': return toolWriteIdentity(client, userId, args.bot_name as string, args.user_call_name as string);
-    case 'read_memory': return toolReadMemory(client, userId);
+    case 'read_memory': return toolReadMemory(client, userId, args.query as string);
     case 'write_memory': return toolWriteMemory(client, userId, args.content as string);
+    case 'update_memory_confidence': return toolUpdateMemoryConfidence(client, userId, args.key as string, args.confidence_delta as number | undefined, args.new_value as string | undefined);
     case 'search_messages': return toolSearchMessages(client, userId, args.keyword as string, args.group_name as string);
     case 'get_my_messages': return toolGetMyMessages(client, userId, args.group_name as string);
     case 'polish_text': return toolPolishText(args.text as string, args.style as string);
@@ -627,8 +1722,26 @@ async function executeTool(client: SupabaseClient, userId: number, name: string,
     case 'get_user_info': return toolGetUserInfo(client, userId);
     case 'generate_image': return toolGenerateImage(args.prompt as string, args.style as string);
     case 'generate_video': return toolGenerateVideo(args.prompt as string, args.duration as number);
-    case 'send_message': return toolSendMessage(client, userId, args.content as string, args.target_type as string, args.target_id as number, args.target_name as string);
+    case 'send_message': return toolSendMessage(client, userId, args.content as string, args.target_type as string, args.target_id as number, args.target_name as string, args.preview as boolean, args.image_url as string);
+    case 'create_task': return toolCreateTask(client, userId, args.name as string, args.cron_expression as string, args.description as string, args.config as Record<string, unknown>);
+    case 'delete_friend': return toolDeleteFriend(client, userId, args.friend_id as number, args.friend_name as string);
+    case 'leave_group': return toolLeaveGroup(client, userId, args.group_id as number, args.group_name as string);
+    case 'edit_moment': return toolEditMoment(client, userId, args.moment_id as number, args.keyword as string, args.new_content as string, args.new_images as string[]);
+    case 'delete_moment': return toolDeleteMoment(client, userId, args.moment_id as number, args.keyword as string);
     default: return { error: `Unknown tool: ${name}` };
+  }
+}
+
+// 直接执行工具（用于用户确认后）
+async function executeToolDirectly(client: SupabaseClient, userId: number, name: string, args: Record<string, unknown>) {
+  switch (name) {
+    case 'generate_image': return doGenerateImage(args.prompt as string, args.style as string);
+    case 'generate_video': return doGenerateVideo(args.prompt as string, args.duration as number);
+    case 'delete_friend': return doDeleteFriend(client, userId, args.friend_id as number);
+    case 'leave_group': return doLeaveGroup(client, userId, args.group_id as number);
+    case 'edit_moment': return doEditMoment(client, userId, args.moment_id as number, args.new_content as string, args.new_images as string[]);
+    case 'delete_moment': return doDeleteMoment(client, userId, args.moment_id as number);
+    default: return { error: `Direct execution not supported for tool: ${name}` };
   }
 }
 
@@ -666,10 +1779,7 @@ function cleanContent(content: string): string {
 // ReAct Agent
 // ============================================
 
-async function runReActAgent(client: SupabaseClient, userId: number, userMessage: string): Promise<string> {
-  const config = new Config();
-  const llm = new LLMClient(config);
-
+async function runReActAgent(client: SupabaseClient, userId: number, userMessage: string): Promise<{ content: string; preview?: Record<string, unknown>; toolCalls?: unknown[] }> {
   // 获取上下文
   const identity = await toolReadIdentity(client, userId);
   const memory = await toolReadMemory(client, userId);
@@ -691,9 +1801,45 @@ async function runReActAgent(client: SupabaseClient, userId: number, userMessage
 - 润色文字 → 调用 polish_text(text="文本", style="casual")
 - 想发空间/说说 → 调用 suggest_moment
 - 询问用户信息 → 调用 get_user_info
+- 创建定时提醒/任务/课表 → 调用 create_task(name="任务名", cron_expression="cron表达式", description="描述", config={})
+  * 用户说"每周一上午8点提醒我上课" → name="上课提醒", cron_expression="0 8 * * 1", description="每周一上午8点提醒上课"
+  * 用户说"每天晚上10点提醒睡觉" → name="睡觉提醒", cron_expression="0 22 * * *", description="每天晚上10点提醒睡觉"
 
-调用格式（必须严格遵守）：
+【高风险操作规则 - 强制】
+当用户请求涉及以下行为时，你必须调用对应工具并返回预览，绝对不允许仅用文字回复代替：
+1. 发送消息/代发消息/帮别人发消息 → 调用 send_message(..., preview: true)
+2. 发布QQ空间/发动态/发说说 → 调用 publish_moment(...)
+3. 生成图片/画画/出图 → 调用 generate_image(...)
+4. 生成视频/做视频/出片 → 调用 generate_video(...)
+5. 删除好友/移除好友/删人 → 调用 delete_friend(...)
+6. 退出群聊/退群/离开群 → 调用 leave_group(...)
+7. 编辑QQ空间动态/修改说说 → 调用 edit_moment(...)
+8. 删除QQ空间动态/删说说 → 调用 delete_moment(...)
+
+⚠️ 违反规则示例（禁止）：
+用户说"给小明发个消息"，你只回复"好的，我帮你发给小明" → ❌ 错误！必须调用 send_message 工具。
+用户说"帮我发空间"，你只回复"文案准备好了，要发吗" → ❌ 错误！必须调用 publish_moment 工具。
+用户说"删了小明"，你只回复"好的，已删除" → ❌ 错误！必须调用 delete_friend 工具返回预览。
+用户说"退群"，你只回复"好的，已退群" → ❌ 错误！必须调用 leave_group 工具返回预览。
+
+正确做法：
+- 先调用对应工具获取 preview 信息
+- 在回复中自然地告诉用户你准备做什么
+- 在回复末尾附上 TOOL_CALL 标记
+
+【代发消息规则】
+当用户要求"给XX发..."或"帮我说..."时：
+1. 先调用 polish_text 润色内容（按用户要求的语气）
+2. 然后调用 send_message 并设置 preview=true，返回预览（不要直接执行发送）
+3. 在回复中说明："我帮你润色了一下：'...'，要发给XX吗？"
+
+【工具调用格式 - 严格遵守】
+当需要调用工具时，在回复末尾追加以下格式的文本（不要修改格式，不要省略任何部分）：
 [TOOL_CALL:{"name":"工具名","arguments":{"参数":"值"}}]
+[TOOL_CALL_END]
+
+示例：
+[TOOL_CALL:{"name":"send_message","arguments":{"content":"你好","target_name":"小明","preview":true}}]
 [TOOL_CALL_END]
 
 如果不需要工具，直接回答即可。
@@ -716,23 +1862,64 @@ ${memory.daily_notes || '（暂无）'}
 2. 根据用户称呼来称呼用户（如"父王"、"大王"等）
 3. 如果调用了工具，基于工具结果回复`;
 
+  // 检测用户是否意图进行高危操作（用于防护层）
+  // 只拦截"模糊"的高危请求，不拦截明确的请求
+  function detectHighRiskIntent(message: string): { isRisky: boolean; isExplicit: boolean } {
+    const lower = message.toLowerCase();
+
+    // 明确的操作意图（不拦截，让LLM自己处理）
+    const explicitPatterns = [
+      /(?:给|向|对).{0,5}(?:小明|张三|李四|王五|小红|小花|[\u4e00-\u9fa5]{2,4}).{0,5}(?:发|送)/,
+      /(?:发|发布|写).{0,3}(?:空间|朋友圈|说说|动态)/,
+      /(?:画|生成|做|出).{0,3}(?:图|图片|画)/,
+      /(?:生成|做|出).{0,3}(?:视频|短片|动图)/,
+    ];
+
+    // 模糊的高危意图（需要拦截）
+    const vagueRiskPatterns = [
+      /^\s*(?:帮|代|替).{0,2}(?:我|忙)?\s*(?:发|送)/, // "帮我发"、"发"
+      /^\s*发(?:给|到|往|出去)?\s*$/, // 单字"发"
+      /^\s*(?:publish|send)\s*$/i,
+    ];
+
+    const isExplicit = explicitPatterns.some(p => p.test(lower));
+    const isVagueRisk = vagueRiskPatterns.some(p => p.test(lower));
+
+    return {
+      isRisky: isExplicit || isVagueRisk,
+      isExplicit,
+    };
+  }
+
+  const riskCheck = detectHighRiskIntent(userMessage);
+
   // 第一次调用
-  const response = await llm.invoke([
+  let content = await callOpenAICompatible([
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
-  ], {
-    model: 'doubao-seed-1-6-251015',
-    temperature: 0.8,
-  });
+  ], { temperature: 0.8 });
 
-  let content = response.content || '';
   const toolCalls = parseToolCalls(content);
+  let previewData: Record<string, unknown> | undefined;
+
+  // 【防护层】只对"模糊的高危意图"且LLM未触发tool call时拦截
+  // 如果用户意图明确（如"发给小明"、"发空间"），不拦截，让LLM自己处理
+  if (riskCheck.isRisky && !riskCheck.isExplicit && toolCalls.length === 0) {
+    return {
+      content: '我注意到你可能想让我帮忙发送内容或生成媒体，请再说得具体一点，比如"发给谁"、"发什么"，我会先给你预览确认~',
+      preview: undefined,
+    };
+  }
 
   // 如果有工具调用，执行并反馈
   if (toolCalls.length > 0) {
     const toolResults = [];
+    const highRiskTools = ['send_message', 'publish_moment', 'generate_image', 'generate_video', 'delete_friend', 'leave_group', 'edit_moment', 'delete_moment'];
     for (const call of toolCalls) {
       const result = await executeTool(client, userId, call.name, call.arguments);
+      if (highRiskTools.includes(call.name) && result && typeof result === 'object' && 'preview' in result) {
+        previewData = result.preview as Record<string, unknown>;
+      }
       toolResults.push(`[${call.name} 结果] ${JSON.stringify(result)}`);
     }
 
@@ -740,17 +1927,14 @@ ${memory.daily_notes || '（暂无）'}
     content = cleanContent(content);
 
     // 第二次调用，反馈工具结果
-    const finalResponse = await llm.invoke([
+    const finalContent = await callOpenAICompatible([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage },
       { role: 'assistant', content: content + '\n[TOOL_CALL 解析执行中...]' },
       { role: 'user', content: `工具执行结果：\n${toolResults.join('\n')}\n\n请基于以上结果，给出最终回复：` },
-    ], {
-      model: 'doubao-seed-1-6-251015',
-      temperature: 0.8,
-    });
+    ], { temperature: 0.8 });
 
-    content = finalResponse.content || content;
+    content = finalContent || content;
   }
 
   // 清理任何剩余的标记
@@ -759,7 +1943,166 @@ ${memory.daily_notes || '（暂无）'}
   // 记录日志
   await addDailyNote(client, userId, `用户: ${userMessage}\n助手: ${content}`);
 
-  return content || '好的~';
+  return { content: content || '好的~', preview: previewData, toolCalls: toolCalls.length > 0 ? toolCalls.map(c => ({ name: c.name, arguments: c.arguments })) : [] };
+}
+
+// ============================================
+// Plan-Execute-Observe Agent 编排器
+// ============================================
+
+// 检测是否为复杂请求（需要多步执行）
+function detectComplexRequest(message: string): boolean {
+  const complexPatterns = [
+    /然后|接着|之后|再|随后|最后/, // 多步骤连接词
+    /先.*再|先.*然后/, // 先后顺序
+    /搜索.*发|查.*发|找.*发/, // 搜索后发消息
+    /润色.*发|改.*发/, // 润色后发送
+    /(?:帮|代|替).{0,5}(?:我|忙)?.{0,10}(?:然后|接着|再)/, // 复杂代办
+  ];
+  return complexPatterns.some(p => p.test(message)) || message.length > 50;
+}
+
+interface PlanStep {
+  step: number;
+  action: string;
+  tool?: string;
+  params?: Record<string, unknown>;
+}
+
+interface ExecutionPlan {
+  steps: PlanStep[];
+  summary: string;
+}
+
+// Planner：拆解用户请求为执行计划
+async function planRequest(client: SupabaseClient, userId: number, userMessage: string): Promise<ExecutionPlan> {
+  const systemPrompt = `你是一个任务规划助手。将用户的请求拆解为可执行的步骤计划。
+
+可用工具：
+- search_messages(keyword, group_name?) - 搜索群聊消息
+- get_my_messages(group_name?) - 获取用户自己的消息
+- polish_text(text, style?) - 润色文本
+- send_message(content, target_name?, preview=true) - 发送消息（预览模式）
+- publish_moment(content, image_urls?) - 发布空间动态（预览模式）
+- generate_image(prompt, style?) - 生成图片（预览模式）
+
+只输出 JSON 格式：
+{
+  "steps": [
+    { "step": 1, "action": "描述", "tool": "工具名", "params": {参数} },
+    ...
+  ],
+  "summary": "计划总结"
+}`;
+
+  const content = await callOpenAICompatible([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userMessage },
+  ], { temperature: 0.3, maxTokens: 1024 });
+
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const plan = JSON.parse(jsonMatch[0]) as ExecutionPlan;
+      return plan;
+    }
+  } catch {
+    // 解析失败，返回单步计划
+  }
+
+  return {
+    steps: [{ step: 1, action: '直接处理用户请求', tool: undefined, params: {} }],
+    summary: '直接处理',
+  };
+}
+
+// Executor：执行计划步骤
+async function executePlan(
+  client: SupabaseClient,
+  userId: number,
+  plan: ExecutionPlan,
+  userMessage: string
+): Promise<{ content: string; preview?: Record<string, unknown>; toolCalls?: unknown[] }> {
+  const stepResults: string[] = [];
+  let previewData: Record<string, unknown> | undefined;
+  const allToolCalls: unknown[] = [];
+
+  for (const step of plan.steps) {
+    if (step.tool) {
+      // 执行工具调用
+      try {
+        const result = await executeTool(client, userId, step.tool, step.params || {});
+        const highRiskTools = ['send_message', 'publish_moment', 'generate_image', 'generate_video', 'delete_friend', 'leave_group', 'edit_moment', 'delete_moment'];
+        if (highRiskTools.includes(step.tool) && result && typeof result === 'object' && 'preview' in result) {
+          previewData = result.preview as Record<string, unknown>;
+        }
+        stepResults.push(`步骤${step.step} (${step.action}): ${JSON.stringify(result)}`);
+        allToolCalls.push({ name: step.tool, arguments: step.params, result });
+      } catch (error) {
+        stepResults.push(`步骤${step.step} (${step.action}) 失败: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  // Observer：基于执行结果生成最终回复
+  const observePrompt = `基于以下执行结果，给出最终回复。如果涉及高危操作（发送消息、删除好友等），请说明已生成预览等待用户确认。
+
+用户原始请求：${userMessage}
+执行计划：${plan.summary}
+步骤结果：
+${stepResults.join('\n')}`;
+
+  const finalContent = await callOpenAICompatible([
+    { role: 'system', content: '你是一个结果汇总助手，用简洁友好的中文总结执行结果。' },
+    { role: 'user', content: observePrompt },
+  ], { temperature: 0.8 });
+
+  return {
+    content: finalContent || '任务执行完成~',
+    preview: previewData,
+    toolCalls: allToolCalls,
+  };
+}
+
+// Plan-Execute-Observe 主入口
+async function runPlanExecuteAgent(
+  client: SupabaseClient,
+  userId: number,
+  userMessage: string
+): Promise<{ content: string; preview?: Record<string, unknown>; toolCalls?: unknown[] }> {
+  // Step 1: Plan
+  const plan = await planRequest(client, userId, userMessage);
+
+  // Step 2: Execute
+  const result = await executePlan(client, userId, plan, userMessage);
+
+  // 记录到每日笔记
+  await addDailyNote(client, userId, `用户: ${userMessage}\n计划: ${plan.summary}\n助手: ${result.content}`);
+
+  return result;
+}
+
+async function runReActAgentWithTimeout(client: SupabaseClient, userId: number, userMessage: string, timeoutMs = 40000): Promise<{ content: string; preview?: Record<string, unknown>; toolCalls?: unknown[] }> {
+  // 检测是否为复杂请求，如果是则使用 Plan-Execute-Observe 模式
+  if (detectComplexRequest(userMessage)) {
+    return Promise.race([
+      runPlanExecuteAgent(client, userId, userMessage),
+      new Promise<{ content: string }>((resolve) => {
+        setTimeout(() => {
+          resolve({ content: '我收到了，你这条我先记下啦。现在后台有点忙，稍等一下我再细致帮你整理~' });
+        }, timeoutMs);
+      }),
+    ]);
+  }
+
+  return Promise.race([
+    runReActAgent(client, userId, userMessage),
+    new Promise<{ content: string }>((resolve) => {
+      setTimeout(() => {
+        resolve({ content: '我收到了，你这条我先记下啦。现在后台有点忙，稍等一下我再细致帮你整理~' });
+      }, timeoutMs);
+    }),
+  ]);
 }
 
 // ============================================
@@ -799,40 +2142,170 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  let auditLog: {
+    userId: number;
+    request: string;
+    response: string;
+    toolCalls: unknown[];
+    status: 'success' | 'failed';
+    error: string;
+  } | null = null;
+
   try {
     const payload = await verifyToken(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
-    const { message } = await request.json();
+    const body = await request.json();
+
+    // 处理工具直接执行（用户确认后）
+    if (body.execute_tool) {
+      const client = await getSupabaseClient();
+      const result = await executeToolDirectly(client, payload.userId, body.tool, body.params || {});
+      return NextResponse.json(result);
+    }
+
+    const { message, conversation_id } = body;
     const userMessage = message?.trim();
 
     if (!userMessage) {
       return NextResponse.json({ error: '消息不能为空' }, { status: 400 });
     }
 
+    // 【用户级限流】
+    const rateLimit = checkRateLimit(payload.userId);
+    if (!rateLimit.allowed) {
+      return NextResponse.json({
+        response: `请求太频繁啦，请 ${rateLimit.resetIn} 秒后再试~`,
+        type: 'text',
+      }, { status: 429 });
+    }
+
+    // 初始化审计日志
+    auditLog = {
+      userId: payload.userId,
+      request: userMessage,
+      response: '',
+      toolCalls: [],
+      status: 'success',
+      error: '',
+    };
+
+    // 【用户级请求队列】确保同一用户串行处理
     const client = await getSupabaseClient();
-    const response = await runReActAgent(client, payload.userId, userMessage);
+    const result = await acquireUserLock(payload.userId, () =>
+      runReActAgentWithTimeout(client, payload.userId, userMessage)
+    );
+    const response = result.content;
+    const preview = result.preview;
+
+    // 更新审计日志
+    if (auditLog) {
+      auditLog.response = response;
+      auditLog.toolCalls = result.toolCalls || [];
+    }
+
+    // 如果提供了 conversation_id，将 Bot 回复持久化到 messages 表
+    if (conversation_id) {
+      try {
+        const { data: botUser } = await client
+          .from('users')
+          .select('id, nickname, avatar_color')
+          .eq('nickname', '小 Q 管家')
+          .maybeSingle();
+
+        if (botUser) {
+          await client.from('messages').insert({
+            conversation_id,
+            sender_id: botUser.id,
+            content: response,
+            type: 'text',
+          });
+
+          // 更新会话最后消息时间
+          await client
+            .from('conversations')
+            .update({ last_message_time: new Date().toISOString() })
+            .eq('id', conversation_id);
+        }
+      } catch (persistError) {
+        console.error('Bot 回复持久化失败:', persistError);
+        // 不阻塞返回，仅记录日志
+      }
+    }
+
+    // 异步写入审计日志（不阻塞响应）
+    if (auditLog) {
+      Promise.resolve().then(async () => {
+        try {
+          const client = await getSupabaseClient();
+          await client.from('bot_audit_logs').insert({
+            user_id: auditLog!.userId,
+            request: auditLog!.request,
+            response: auditLog!.response,
+            tool_calls: auditLog!.toolCalls,
+            latency_ms: Date.now() - startTime,
+            model: process.env.OPENAI_MODEL || '',
+            status: auditLog!.status,
+            error: auditLog!.error,
+          });
+        } catch (e) {
+          console.error('审计日志写入失败:', e);
+        }
+      });
+    }
+
+    if (preview) {
+      return NextResponse.json({
+        response,
+        type: 'preview',
+        preview,
+      });
+    }
 
     return NextResponse.json({ response, type: 'text' });
 
   } catch (error: unknown) {
     console.error('管家处理错误:', error);
-    
+
+    // 更新审计日志为失败状态
+    if (auditLog) {
+      auditLog.status = 'failed';
+      auditLog.error = error instanceof Error ? error.message : String(error);
+      Promise.resolve().then(async () => {
+        try {
+          const client = await getSupabaseClient();
+          await client.from('bot_audit_logs').insert({
+            user_id: auditLog!.userId,
+            request: auditLog!.request,
+            response: auditLog!.response,
+            tool_calls: auditLog!.toolCalls,
+            latency_ms: Date.now() - startTime,
+            model: process.env.OPENAI_MODEL || '',
+            status: auditLog!.status,
+            error: auditLog!.error,
+          });
+        } catch (e) {
+          console.error('审计日志写入失败:', e);
+        }
+      });
+    }
+
     // 检查是否是 LLM API 错误
     const errorMessage = error instanceof Error ? error.message : String(error);
     if (errorMessage.includes('ErrBalanceOverdue') || errorMessage.includes('余额') || errorMessage.includes('balance')) {
-      return NextResponse.json({ 
-        response: '抱歉，当前服务暂时无法使用（LLM API 账户余额不足），请稍后再试~', 
-        type: 'text' 
+      return NextResponse.json({
+        response: '抱歉，当前服务暂时无法使用（LLM API 账户余额不足），请稍后再试~',
+        type: 'text'
       });
     }
-    
+
     // 其他错误返回友好提示
-    return NextResponse.json({ 
-      response: '抱歉，我刚才有点走神了，能再说一遍吗？', 
-      type: 'text' 
+    return NextResponse.json({
+      response: '抱歉，我刚才有点走神了，能再说一遍吗？',
+      type: 'text'
     });
   }
 }
