@@ -97,4 +97,5 @@ Desktop.ini
 .vercel
 .turbo
 
-.coze-logs
+# Local debug database
+.env.local.example

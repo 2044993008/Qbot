@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: qq-local-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "54322:5432"
+    volumes:
+      - qq_local_postgres_data:/var/lib/postgresql/data
+      - ./:/workspace
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.8
+    container_name: qq-local-postgrest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://postgres:postgres@postgres:5432/app
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: postgres
+      PGRST_JWT_SECRET: local-dev-jwt-secret-with-at-least-32-chars
+      PGRST_SERVER_PORT: 3000
+    ports:
+      - "54321:3000"
+
+volumes:
+  qq_local_postgres_data:

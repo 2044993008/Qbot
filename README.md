@@ -354,6 +354,11 @@ export const useStore = create<Store>((set) => ({
 - [Tailwind CSS 文档](https://tailwindcss.com/docs)
 - [React Hook Form](https://react-hook-form.com)
 
+## 项目附加文档
+
+- 本地数据库调试说明：`README.local-db.md`
+- 回归测试清单：`docs/qa-regression-checklist.md`
+
 ## 重要提示
 
 1. **必须使用 pnpm** 作为包管理器
