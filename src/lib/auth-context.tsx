@@ -53,9 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
         setToken(null);
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem(TOKEN_KEY);
-        }
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem('qq_csrf_token');
+      }
       }
     } catch {
       setUser(null);
@@ -84,6 +85,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(response.token);
         if (typeof window !== 'undefined') {
           localStorage.setItem(TOKEN_KEY, response.token);
+          if (response.csrf_token) {
+            localStorage.setItem('qq_csrf_token', response.csrf_token);
+          }
         }
       } else {
         throw new Error('登录失败，请检查账号密码');
@@ -102,6 +106,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(response.token);
         if (typeof window !== 'undefined') {
           localStorage.setItem(TOKEN_KEY, response.token);
+          if (response.csrf_token) {
+            localStorage.setItem('qq_csrf_token', response.csrf_token);
+          }
         }
       } else {
         throw new Error('注册失败，请重试');

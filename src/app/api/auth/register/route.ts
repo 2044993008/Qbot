@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { generateToken } from '@/lib/auth-utils';
 import { rateLimitMiddleware } from '@/lib/rate-limit';
 import { validateBody, registerSchema } from '@/lib/validation';
+import { generateCsrfToken } from '@/lib/csrf';
 
 // POST - 注册
 export async function POST(request: NextRequest) {
@@ -89,9 +90,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const csrfToken = generateCsrfToken(String(data.id));
+
     return NextResponse.json({
       success: true,
       token,
+      csrf_token: csrfToken,
       user: data
     });
   } catch (err) {

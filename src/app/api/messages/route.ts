@@ -3,6 +3,7 @@ import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { checkUserRateLimit } from '@/lib/rate-limit';
 import { validateBody, sendMessageSchema } from '@/lib/validation';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 import type { Message } from '@/lib/types';
 
 interface MessageRow {
@@ -140,6 +141,12 @@ export async function POST(request: NextRequest) {
     const limit = checkUserRateLimit(payload.userId, { maxRequests: 30, windowMs: 60 * 1000, keyPrefix: 'msg_send' });
     if (!limit.allowed) {
       return NextResponse.json({ error: '发送消息过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
+    }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     const validated = await validateBody(request, sendMessageSchema);

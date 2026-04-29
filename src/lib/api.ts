@@ -2,6 +2,7 @@ import type { User, Friend, Group, GroupMember, Conversation, Message, Moment, B
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'qq_token';
+const CSRF_TOKEN_KEY = 'qq_csrf_token';
 
 // 获取 token（优先从 localStorage 获取）
 export function getToken(): string | null {
@@ -9,6 +10,21 @@ export function getToken(): string | null {
     return localStorage.getItem(TOKEN_KEY);
   }
   return null;
+}
+
+// 获取 CSRF token
+function getCsrfToken(): string | null {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem(CSRF_TOKEN_KEY);
+  }
+  return null;
+}
+
+// 设置 CSRF token
+export function setCsrfToken(token: string): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(CSRF_TOKEN_KEY, token);
+  }
 }
 
 // 通用请求函数
@@ -31,6 +47,12 @@ async function request<T>(
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+
+  // 添加 CSRF token（状态变更请求）
+  const csrfToken = getCsrfToken();
+  if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method || '')) {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
   
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
@@ -49,13 +71,13 @@ async function request<T>(
 // 认证 API
 export const authApi = {
   login: (qq_number: string, password: string) =>
-    request<{ token: string; user: User; success: boolean }>('/auth/login', {
+    request<{ token: string; user: User; success: boolean; csrf_token?: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ qq_number, password }),
     }),
 
   register: (qq_number: string, nickname: string, password: string) =>
-    request<{ token: string; user: User; success: boolean }>('/auth/register', {
+    request<{ token: string; user: User; success: boolean; csrf_token?: string }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ qq_number, nickname, password }),
     }),

@@ -3,6 +3,7 @@ import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { getSupabaseClient as getStorageClient } from '@/storage/database/supabase-client';
 import { checkUserRateLimit } from '@/lib/rate-limit';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 
 // POST - 上传图片
@@ -17,6 +18,12 @@ export async function POST(request: NextRequest) {
     const limit = checkUserRateLimit(payload.userId, { maxRequests: 10, windowMs: 60 * 1000, keyPrefix: 'upload' });
     if (!limit.allowed) {
       return NextResponse.json({ error: '上传过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
+    }
+
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     const formData = await request.formData();

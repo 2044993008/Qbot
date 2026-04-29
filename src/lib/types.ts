@@ -160,6 +160,7 @@ export interface ApiResponse<T> {
 export interface LoginResponse {
   token: string;
   user: User;
+  csrf_token?: string;
 }
 
 // 消息预览
