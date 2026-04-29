@@ -4,7 +4,7 @@ const API_BASE = '/api';
 const TOKEN_KEY = 'qq_token';
 
 // 获取 token（优先从 localStorage 获取）
-function getToken(): string | null {
+export function getToken(): string | null {
   if (typeof window !== 'undefined') {
     return localStorage.getItem(TOKEN_KEY);
   }

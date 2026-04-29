@@ -71,6 +71,33 @@ export async function verifyToken(request: NextRequest) {
   }
 }
 
+// 验证 token string（用于 Socket.IO 等非 HTTP 场景）
+export function verifyTokenString(token: string): { userId: number; qqNumber: string } | null {
+  if (!token) return null;
+
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    const [headerEncoded, payloadEncoded, signature] = parts;
+
+    const expectedSignature = createSignature(`${headerEncoded}.${payloadEncoded}`);
+    if (signature !== expectedSignature) {
+      return null;
+    }
+
+    const payload = JSON.parse(Buffer.from(payloadEncoded, 'base64url').toString());
+
+    if (payload.exp && Date.now() > payload.exp) {
+      return null;
+    }
+
+    return { userId: payload.userId, qqNumber: payload.qqNumber };
+  } catch {
+    return null;
+  }
+}
+
 export async function isGroupMember(groupId: number, userId: number): Promise<boolean> {
   const client = getSupabaseClient();
   const { data, error } = await client

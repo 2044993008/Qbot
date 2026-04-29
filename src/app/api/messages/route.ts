@@ -219,13 +219,28 @@ export async function POST(request: NextRequest) {
       .eq('id', payload.userId)
       .single();
 
+    const enrichedMessage = {
+      ...message,
+      sender_nickname: sender?.nickname || '未知',
+      sender_avatar: sender?.avatar_color || '#666',
+      is_mine: true,
+    };
+
+    // 通过 Socket.IO 向会话内用户推送新消息
+    const io = (globalThis as typeof globalThis & { io?: unknown }).io;
+    if (io) {
+      (io as { to: (room: string) => { emit: (event: string, data: unknown) => void } })
+        .to(`conversation_${conversation_id}`)
+        .emit('new_message', {
+          ...message,
+          sender_nickname: sender?.nickname || '未知',
+          sender_avatar: sender?.avatar_color || '#666',
+          is_mine: false,
+        });
+    }
+
     return NextResponse.json({
-      message: {
-        ...message,
-        sender_nickname: sender?.nickname || '未知',
-        sender_avatar: sender?.avatar_color || '#666',
-        is_mine: true, // 自己发送的消息
-      }
+      message: enrichedMessage,
     });
   } catch (err) {
     console.error('发送消息错误:', err);

@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { Conversation, Friend, Group, GroupMember, Message, Moment, ScheduledTask } from '@/lib/types';
 import { conversationsApi, friendsApi, groupsApi, messagesApi, momentsApi, tasksApi } from '@/lib/api';
+import { joinConversation, leaveConversation, onNewMessage, offNewMessage } from '@/lib/socket-client';
 
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -126,36 +127,34 @@ export function useMessages(conversationId: number | null) {
     })();
   }, [conversationId]);
 
-  // 轮询新消息（用于群聊中接收 Bot 异步回复等场景）
+  // WebSocket 实时消息
   useEffect(() => {
     if (!conversationId) return;
-    
-    fetchMessages();
-    
-    const interval = setInterval(() => {
-      messagesApi.getList(conversationId).then(response => {
-        setMessages(prev => {
-          const newMessages = response.messages || [];
-          // 保留客户端-only 的临时消息（id < 0，如 Bot 流式回复占位、Preview 卡片等）
-          const tempMessages = prev.filter(m => m.id < 0);
-          const serverMessageCount = prev.filter(m => m.id > 0).length;
-          // 只有当服务器消息有变化时才更新
-          if (newMessages.length !== serverMessageCount) {
-            return [...newMessages, ...tempMessages];
-          }
-          const lastNew = newMessages[newMessages.length - 1];
-          const lastPrev = prev.filter(m => m.id > 0).pop();
-          if (lastNew && lastPrev && lastNew.id !== lastPrev.id) {
-            return [...newMessages, ...tempMessages];
-          }
-          return prev;
-        });
-      }).catch(() => {
-        // 静默忽略轮询错误
-      });
-    }, 5000);
 
-    return () => clearInterval(interval);
+    fetchMessages();
+
+    // 加入会话 room
+    joinConversation(conversationId);
+
+    const handleNewMessage = (msg: unknown) => {
+      const message = msg as Message;
+      if (message.conversation_id === conversationId) {
+        setMessages((prev) => {
+          // 避免重复添加
+          if (prev.some((m) => m.id === message.id)) return prev;
+          // 保留客户端临时消息
+          const tempMessages = prev.filter((m) => m.id < 0);
+          return [...prev.filter((m) => m.id > 0), message, ...tempMessages];
+        });
+      }
+    };
+
+    onNewMessage(handleNewMessage);
+
+    return () => {
+      leaveConversation(conversationId);
+      offNewMessage(handleNewMessage);
+    };
   }, [conversationId, fetchMessages]);
 
   const sendMessage = useCallback((
