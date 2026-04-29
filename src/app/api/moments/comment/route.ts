@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 
+async function getMomentCommentCount(client: ReturnType<typeof getSupabaseClient>, momentId: number): Promise<number> {
+  const { count, error } = await client
+    .from('moment_comments')
+    .select('*', { count: 'exact', head: true })
+    .eq('moment_id', momentId);
+
+  if (error) {
+    throw new Error(`统计评论数失败: ${error.message}`);
+  }
+
+  return count || 0;
+}
+
 
 // POST - 评论动态
 export async function POST(request: NextRequest) {
@@ -19,6 +32,20 @@ export async function POST(request: NextRequest) {
 
     const client = getSupabaseClient();
 
+    const { data: moment, error: momentError } = await client
+      .from('moments')
+      .select('id')
+      .eq('id', moment_id)
+      .maybeSingle();
+
+    if (momentError) {
+      throw new Error(`查询动态失败: ${momentError.message}`);
+    }
+
+    if (!moment) {
+      return NextResponse.json({ error: '动态不存在' }, { status: 404 });
+    }
+
     // 添加评论
     const { data: comment, error } = await client
       .from('moment_comments')
@@ -32,18 +59,15 @@ export async function POST(request: NextRequest) {
 
     if (error) throw new Error(`添加评论失败: ${error.message}`);
 
-    // 更新评论数
-    const { data: moment } = await client
+    const commentCount = await getMomentCommentCount(client, moment_id);
+    const { error: updateError } = await client
       .from('moments')
-      .select('comment_count')
-      .eq('id', moment_id)
-      .single();
-    
-    const newCount = (moment?.comment_count || 0) + 1;
-    await client
-      .from('moments')
-      .update({ comment_count: newCount })
+      .update({ comment_count: commentCount })
       .eq('id', moment_id);
+
+    if (updateError) {
+      throw new Error(`更新评论数失败: ${updateError.message}`);
+    }
 
     // 获取评论者信息
     const { data: commenter } = await client
