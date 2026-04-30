@@ -44,8 +44,12 @@ test.describe('Chat', () => {
     await page1.fill('input[placeholder*="输入消息"], textarea[placeholder*="输入消息"]', messageContent);
     await page1.click('button[type="submit"], button:has(.lucide-send)');
 
+    // 等待网络空闲，确保消息已发送并渲染
+    await page1.waitForLoadState('networkidle');
+    await page1.waitForTimeout(500);
+
     // 验证消息出现在聊天窗口
-    await expect(page1.locator(`text=${messageContent}`)).toBeVisible();
+    await expect(page1.locator(`text=${messageContent}`)).toBeVisible({ timeout: 10000 });
 
     await context1.close();
     await context2.close();
