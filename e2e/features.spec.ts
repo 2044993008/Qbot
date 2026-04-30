@@ -1,21 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-const TEST_USER = {
-  qq_number: '10001',
-  password: '123456',
-};
-
-async function login(page: any) {
-  await page.goto('/login');
-  await page.fill('input[placeholder*="QQ"]', TEST_USER.qq_number);
-  await page.fill('input[type="password"]', TEST_USER.password);
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/app/);
-}
-
 test.describe('Moments', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page);
+    await page.goto('/app');
   });
 
   test('should publish a moment', async ({ page }) => {
@@ -50,7 +37,7 @@ test.describe('Moments', () => {
 
 test.describe('Scheduled Tasks', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page);
+    await page.goto('/app');
   });
 
   test('should create a reminder task', async ({ page }) => {

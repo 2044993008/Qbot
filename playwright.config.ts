@@ -15,12 +15,19 @@ export default defineConfig({
     launchOptions: {
       executablePath: process.env.PLAYWRIGHT_CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     },
+    storageState: 'playwright/.auth/user.json',
   },
 
   projects: [
     {
+      name: 'setup',
+      testMatch: /.*\.setup\.ts/,
+      use: { storageState: undefined },
+    },
+    {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
     },
   ],
 
@@ -29,5 +36,8 @@ export default defineConfig({
     url: 'http://localhost:5000',
     reuseExistingServer: true,
     timeout: 120 * 1000,
+    env: {
+      PLAYWRIGHT_SKIP_RATE_LIMIT: 'true',
+    },
   },
 });

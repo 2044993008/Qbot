@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 
+// Auth tests must perform real login/logout; do not reuse saved session.
+test.use({ storageState: undefined });
+
 const TEST_USER = {
   qq_number: '10001',
   password: '123456',

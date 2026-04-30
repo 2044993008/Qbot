@@ -1,22 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-const TEST_USER = {
-  qq_number: '10001',
-  password: '123456',
-};
-
-async function login(page: any) {
-  await page.goto('/login');
-  await page.fill('input[placeholder*="QQ"]', TEST_USER.qq_number);
-  await page.fill('input[type="password"]', TEST_USER.password);
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/app/);
-}
-
 test.describe('Chat', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page);
-    // 等待会话列表加载
+    await page.goto('/app');
     await page.waitForSelector('[data-testid="conversation-item"]', { timeout: 10000 });
   });
 
@@ -33,17 +19,17 @@ test.describe('Chat', () => {
   });
 
   test('should receive message via WebSocket', async ({ browser }) => {
-    // 创建两个浏览器上下文模拟两个用户
-    const context1 = await browser.newContext();
+    // 用户1使用已保存的登录状态
+    const context1 = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
     const context2 = await browser.newContext();
 
     const page1 = await context1.newPage();
     const page2 = await context2.newPage();
 
-    await login(page1);
+    await page1.goto('/app');
     await page1.waitForSelector('[data-testid="conversation-item"]', { timeout: 10000 });
 
-    // 用户2登录（用不同账号或同一账号不同会话）
+    // 用户2手动登录
     await page2.goto('/login');
     await page2.fill('input[placeholder*="QQ"]', '10002');
     await page2.fill('input[type="password"]', '123456');

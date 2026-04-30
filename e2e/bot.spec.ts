@@ -1,18 +1,5 @@
 import { test, expect } from '@playwright/test';
 
-const TEST_USER = {
-  qq_number: '10001',
-  password: '123456',
-};
-
-async function login(page: any) {
-  await page.goto('/login');
-  await page.fill('input[placeholder*="QQ"]', TEST_USER.qq_number);
-  await page.fill('input[type="password"]', TEST_USER.password);
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/app/);
-}
-
 async function sendToBot(page: any, message: string) {
   await page.locator('text=/小.?Q.?管家/').first().click();
   await page.fill('input[placeholder*="输入消息"], textarea[placeholder*="输入消息"]', message);
@@ -41,7 +28,8 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('AI Butler - Complex Multi-Step Instructions', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page);
+    await page.goto('/app');
+    await page.waitForSelector('text=/消息|小.?Q.?管家/', { timeout: 10000 });
   });
 
   test.describe.configure({ timeout: 90000 });
@@ -109,7 +97,8 @@ test.describe('AI Butler - Complex Multi-Step Instructions', () => {
 
 test.describe('AI Butler - Simple Interactions', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page);
+    await page.goto('/app');
+    await page.waitForSelector('text=/消息|小.?Q.?管家/', { timeout: 10000 });
   });
 
   test('should respond to simple greeting', async ({ page }) => {

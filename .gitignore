@@ -99,3 +99,13 @@ Desktop.ini
 
 # Local debug database
 .env.local.example
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.auth/
+/.playwright-mcp/
+
+# Local agent settings
+/.claude/settings.local.json
+/.coze

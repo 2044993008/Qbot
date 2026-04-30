@@ -59,6 +59,10 @@ function checkMemoryRateLimit(
   };
 }
 
+function skipRateLimit() {
+  return process.env.PLAYWRIGHT_SKIP_RATE_LIMIT === 'true';
+}
+
 /**
  * 检查并更新限流状态（优先 Redis，未配置则回退内存）
  * @returns 是否允许请求，以及剩余配额信息
@@ -67,6 +71,9 @@ export async function checkRateLimit(
   identifier: string,
   options: Partial<RateLimitOptions> = {}
 ): Promise<{ allowed: boolean; remaining: number; resetIn: number; retryAfter: number }> {
+  if (skipRateLimit()) {
+    return { allowed: true, remaining: 9999, resetIn: 0, retryAfter: 0 };
+  }
   if (isRedisEnabled()) {
     return checkRedisRateLimit(identifier, { ...DEFAULT_OPTIONS, ...options });
   }
@@ -81,7 +88,27 @@ export function checkRateLimitSync(
   identifier: string,
   options: Partial<RateLimitOptions> = {}
 ): { allowed: boolean; remaining: number; resetIn: number; retryAfter: number } {
+  if (skipRateLimit()) {
+    return { allowed: true, remaining: 9999, resetIn: 0, retryAfter: 0 };
+  }
   return checkMemoryRateLimit(identifier, options);
+}
+
+/**
+ * 根据 userId 做限流（适用于已认证接口）
+ * 优先 Redis，回退内存
+ */
+export async function checkUserRateLimit(
+  userId: number,
+  options: Partial<RateLimitOptions> = {}
+): Promise<{ allowed: boolean; remaining: number; resetIn: number; retryAfter: number }> {
+  if (skipRateLimit()) {
+    return { allowed: true, remaining: 9999, resetIn: 0, retryAfter: 0 };
+  }
+  if (isRedisEnabled()) {
+    return checkRedisRateLimit(String(userId), { keyPrefix: 'user', ...DEFAULT_OPTIONS, ...options });
+  }
+  return checkMemoryRateLimit(String(userId), { keyPrefix: 'user', ...options });
 }
 
 /**
@@ -127,16 +154,4 @@ export function rateLimitMiddleware(options: Partial<RateLimitOptions> = {}) {
   };
 }
 
-/**
- * 根据 userId 做限流（适用于已认证接口）
- * 优先 Redis，回退内存
- */
-export async function checkUserRateLimit(
-  userId: number,
-  options: Partial<RateLimitOptions> = {}
-): Promise<{ allowed: boolean; remaining: number; resetIn: number; retryAfter: number }> {
-  if (isRedisEnabled()) {
-    return checkRedisRateLimit(String(userId), { keyPrefix: 'user', ...DEFAULT_OPTIONS, ...options });
-  }
-  return checkMemoryRateLimit(String(userId), { keyPrefix: 'user', ...options });
-}
+
