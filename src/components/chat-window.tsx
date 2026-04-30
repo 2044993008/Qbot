@@ -561,7 +561,7 @@ export default function ChatWindow({
               isSameDay(new Date(prevMsg.created_at), new Date(msg.created_at));
             
             return (
-              <div key={msg.id}>
+              <div key={`msg-${msg.id}`}>
                 {/* 日期分隔 */}
                 {showDate && (
                   <div className="flex items-center justify-center my-4">

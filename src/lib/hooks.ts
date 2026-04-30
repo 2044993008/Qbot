@@ -169,7 +169,11 @@ export function useMessages(conversationId: number | null) {
       try {
         const response = await messagesApi.send(conversationId, type, content, metadata);
         if (response.message) {
-          setMessages(prev => [...prev, response.message]);
+          setMessages(prev => {
+            // 避免重复添加（WebSocket 可能已推送）
+            if (prev.some(m => m.id === response.message.id)) return prev;
+            return [...prev, response.message];
+          });
         }
         return response.message;
       } catch (error) {

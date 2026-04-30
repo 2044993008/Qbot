@@ -114,7 +114,7 @@ export default function ChatList({ onSelectChat }: ChatListProps) {
             ) : (
               filteredConversations.map((conv) => (
                 <div
-                  key={conv.id}
+                  key={`conv-${conv.id}`}
                   data-testid="conversation-item"
                   onClick={() => onSelectChat(conv.type as 'private' | 'group', conv.target_id, conv.target_name || '未知', conv.target_avatar)}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"
@@ -159,7 +159,7 @@ export default function ChatList({ onSelectChat }: ChatListProps) {
             ) : (
               sortedFriends.map((friend) => (
                 <div
-                  key={friend.id}
+                  key={`friend-${friend.id}`}
                   onClick={() => onSelectChat('private', friend.id, friend.remark || friend.nickname, friend.avatar_color)}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"
                 >
@@ -198,7 +198,7 @@ export default function ChatList({ onSelectChat }: ChatListProps) {
             ) : (
               filteredGroups.map((group) => (
                 <div
-                  key={group.id}
+                  key={`group-${group.id}`}
                   onClick={() => onSelectChat('group', group.id, group.name, group.avatar_color)}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"
                 >

@@ -259,7 +259,7 @@ export default function MomentsPage() {
         {/* 动态列表 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-20">
           {moments.map((moment) => (
-            <Card key={moment.id} className="overflow-hidden">
+            <Card key={`moment-${moment.id}`} className="overflow-hidden">
               <CardContent className="p-4">
                 {/* 发布者信息 */}
                 <div className="flex items-center justify-between mb-3">
@@ -378,7 +378,7 @@ export default function MomentsPage() {
                         )}
                         
                         {(showAllComments[moment.id] ? moment.comments : moment.comments.slice(0, 3)).map((comment) => (
-                          <div key={comment.id} className="flex gap-2 text-sm">
+                          <div key={`comment-${comment.id}`} className="flex gap-2 text-sm">
                             <span className="font-medium text-[#12b7f5]">
                               {comment.user_nickname}：
                             </span>

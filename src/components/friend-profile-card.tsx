@@ -169,7 +169,7 @@ export function FriendProfileCard({ friendId, onClose, onStartChat }: FriendProf
               <h3 className="text-sm text-gray-500 font-medium mb-2">最近聊天</h3>
               <div className="space-y-2">
                 {recentMessages.slice(0, 3).map((msg) => (
-                  <div key={msg.id} className="text-sm text-gray-600 bg-gray-50 rounded-lg p-2">
+                  <div key={`msg-${msg.id}`} className="text-sm text-gray-600 bg-gray-50 rounded-lg p-2">
                     <p className="truncate">{msg.content}</p>
                     <p className="text-xs text-gray-400 mt-1">
                       {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true, locale: zhCN })}
