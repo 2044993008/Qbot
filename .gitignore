@@ -109,3 +109,6 @@ Desktop.ini
 # Local agent settings
 /.claude/settings.local.json
 /.coze
+
+# Temporary debug scripts
+/scripts/e2e-*.js
