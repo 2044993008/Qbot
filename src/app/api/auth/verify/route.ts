@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
+import { generateCsrfToken } from '@/lib/csrf';
 
 // GET - 验证登录状态
 export async function GET(request: NextRequest) {
@@ -22,8 +23,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
+    const csrfToken = generateCsrfToken(String(user.id));
+
     return NextResponse.json({
       authenticated: true,
+      csrf_token: csrfToken,
       user: {
         id: user.id,
         qq_number: user.qq_number,

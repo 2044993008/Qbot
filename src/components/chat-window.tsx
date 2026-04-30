@@ -90,7 +90,7 @@ export default function ChatWindow({
     if (type === 'group') {
       const loadMembers = async () => {
         try {
-          const response = await fetch(`/api/groups/members?group_id=${targetId}`);
+          const response = await fetch(`/api/groups/members?group_id=${targetId}`, { credentials: 'include' });
           const data = await response.json();
           setMembers(data.members || []);
         } catch (error) {
@@ -123,8 +123,8 @@ export default function ChatWindow({
     setIsLoadingMore(true);
     try {
       const oldestMessage = messages[0];
-      const response = await fetch(`/api/messages?conversation_id=${conversationId}&before=${oldestMessage.id}&limit=20`);
-      const data = await response.json();
+          const response = await fetch(`/api/messages?conversation_id=${conversationId}&before=${oldestMessage.id}&limit=20`, { credentials: 'include' });
+          const data = await response.json();
       
       if (data.messages && data.messages.length > 0) {
         setMessages(prev => [...data.messages, ...prev]);
@@ -236,6 +236,7 @@ export default function ChatWindow({
       const response = await fetch('/api/bot/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           message: userContent,
           conversation_id: convId,

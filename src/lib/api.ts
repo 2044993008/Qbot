@@ -86,7 +86,7 @@ export const authApi = {
     request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
 
   verify: () =>
-    request<{ authenticated: boolean; user?: User }>('/auth/verify'),
+    request<{ authenticated: boolean; user?: User; csrf_token?: string }>('/auth/verify'),
 };
 
 // 用户 API

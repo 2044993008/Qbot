@@ -50,6 +50,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await authApi.verify();
       if (response.authenticated && response.user) {
         setUser(response.user);
+        if (response.csrf_token && typeof window !== 'undefined') {
+          localStorage.setItem('qq_csrf_token', response.csrf_token);
+        }
       } else {
         setUser(null);
         setToken(null);
