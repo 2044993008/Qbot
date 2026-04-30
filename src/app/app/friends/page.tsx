@@ -175,7 +175,7 @@ export default function FriendsPage() {
                     在线好友 ({onlineFriends.length})
                   </h3>
                   {onlineFriends.map((friend) => (
-                    <FriendItem key={friend.id} friend={friend} />
+                    <FriendItem key={`online-${friend.id}`} friend={friend} />
                   ))}
                 </div>
               )}
@@ -187,7 +187,7 @@ export default function FriendsPage() {
                     忙碌 ({busyFriends.length})
                   </h3>
                   {busyFriends.map((friend) => (
-                    <FriendItem key={friend.id} friend={friend} />
+                    <FriendItem key={`busy-${friend.id}`} friend={friend} />
                   ))}
                 </div>
               )}
@@ -199,7 +199,7 @@ export default function FriendsPage() {
                     离线好友 ({offlineFriends.length})
                   </h3>
                   {offlineFriends.map((friend) => (
-                    <FriendItem key={friend.id} friend={friend} />
+                    <FriendItem key={`offline-${friend.id}`} friend={friend} />
                   ))}
                 </div>
               )}
