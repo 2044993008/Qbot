@@ -18,6 +18,14 @@ vi.mock('@/lib/auth-context', () => ({
   }),
 }));
 
+// Mock next/navigation
+const mockPush = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
+
 // Mock date-fns
 vi.mock('date-fns', () => ({
   formatDistanceToNow: () => '5分钟前',
@@ -182,7 +190,7 @@ describe('ChatList', () => {
     expect(screen.queryByText('张小明')).not.toBeInTheDocument();
   });
 
-  it('calls onSelectChat when conversation is clicked', async () => {
+  it('calls onSelectChat and navigates when conversation is clicked', async () => {
     const user = userEvent.setup();
     render(<ChatList onSelectChat={mockOnSelectChat} />);
 
@@ -191,6 +199,35 @@ describe('ChatList', () => {
     if (conversationItem) await user.click(conversationItem);
 
     expect(mockOnSelectChat).toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith('/app/chat/1');
+  });
+
+  it('navigates to friend chat when friend is clicked', async () => {
+    const user = userEvent.setup();
+    render(<ChatList onSelectChat={mockOnSelectChat} />);
+
+    const friendsTab = screen.getByText('好友');
+    await user.click(friendsTab);
+
+    const friendItem = screen.getByText('小明').closest('div[class*="cursor-pointer"]')
+      || screen.getByText('小明').closest('div');
+    if (friendItem) await user.click(friendItem);
+
+    expect(mockPush).toHaveBeenCalledWith('/app/chat/1');
+  });
+
+  it('navigates to group chat when group is clicked', async () => {
+    const user = userEvent.setup();
+    render(<ChatList onSelectChat={mockOnSelectChat} />);
+
+    const groupsTab = screen.getByText('群聊');
+    await user.click(groupsTab);
+
+    const groupItem = screen.getByText('班级群').closest('div[class*="cursor-pointer"]')
+      || screen.getByText('班级群').closest('div');
+    if (groupItem) await user.click(groupItem);
+
+    expect(mockPush).toHaveBeenCalledWith('/app/chat/1');
   });
 
   it('shows empty state for friends tab when no friends', async () => {

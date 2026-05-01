@@ -4,7 +4,7 @@ import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ChatWindow from '@/components/chat-window';
 import { useAuth } from '@/lib/auth-context';
-import { friendsApi, conversationsApi, botApi } from '@/lib/api';
+import { friendsApi, conversationsApi, groupsApi, botApi } from '@/lib/api';
 import type { Conversation, Friend } from '@/lib/types';
 
 interface PageProps {
@@ -101,6 +101,26 @@ export default function ChatPage({ params }: PageProps) {
     }
   };
 
+  const loadGroupTargetInfo = async (urlId: number): Promise<boolean> => {
+    try {
+      const response = await groupsApi.getList();
+      const group = response.groups.find((g) => g.id === urlId);
+      if (group) {
+        setTargetInfo({
+          type: 'group',
+          id: group.id,
+          name: group.name,
+          avatar: group.avatar_color || '#6366f1',
+        });
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('获取群信息失败:', error);
+      return false;
+    }
+  };
+
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       botApi
@@ -130,6 +150,11 @@ export default function ChatPage({ params }: PageProps) {
 
           const loadedConversation = await loadConversationTargetInfo(urlId);
           if (loadedConversation) {
+            return;
+          }
+
+          const loadedGroup = await loadGroupTargetInfo(urlId);
+          if (loadedGroup) {
             return;
           }
 

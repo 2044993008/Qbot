@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Sidebar, MobileNav } from '@/components/sidebar';
 import { useConversations, useFriends, useGroups } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth-context';
@@ -15,6 +16,7 @@ interface ChatListProps {
 }
 
 export default function ChatList({ onSelectChat }: ChatListProps) {
+  const router = useRouter();
   const { isLoading: authLoading, isAuthenticated } = useAuth();
   const { conversations, fetchConversations } = useConversations();
   const { friends, fetchFriends } = useFriends();
@@ -116,7 +118,10 @@ export default function ChatList({ onSelectChat }: ChatListProps) {
                 <div
                   key={`conv-${conv.id}`}
                   data-testid="conversation-item"
-                  onClick={() => onSelectChat(conv.type as 'private' | 'group', conv.target_id, conv.target_name || '未知', conv.target_avatar)}
+                  onClick={() => {
+                    onSelectChat(conv.type as 'private' | 'group', conv.id, conv.target_name || '未知', conv.target_avatar);
+                    router.push(`/app/chat/${conv.id}`);
+                  }}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"
                 >
                   <Avatar
@@ -160,7 +165,10 @@ export default function ChatList({ onSelectChat }: ChatListProps) {
               sortedFriends.map((friend) => (
                 <div
                   key={`friend-${friend.id}`}
-                  onClick={() => onSelectChat('private', friend.id, friend.remark || friend.nickname, friend.avatar_color)}
+                  onClick={() => {
+                    onSelectChat('private', friend.id, friend.remark || friend.nickname, friend.avatar_color);
+                    router.push(`/app/chat/${friend.id}`);
+                  }}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"
                 >
                   <Avatar
@@ -199,7 +207,10 @@ export default function ChatList({ onSelectChat }: ChatListProps) {
               filteredGroups.map((group) => (
                 <div
                   key={`group-${group.id}`}
-                  onClick={() => onSelectChat('group', group.id, group.name, group.avatar_color)}
+                  onClick={() => {
+                    onSelectChat('group', group.id, group.name, group.avatar_color);
+                    router.push(`/app/chat/${group.id}`);
+                  }}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"
                 >
                   <Avatar
