@@ -2136,11 +2136,22 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
+    // CSRF 验证 — 所有状态变更操作必须经过 CSRF 校验
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
+    }
+
     // 处理工具直接执行（用户确认后）
     if (body.execute_tool) {
       const toolValidated = botToolExecuteSchema.safeParse(body);
       if (!toolValidated.success) {
         return NextResponse.json({ error: '参数验证失败' }, { status: 400 });
+      }
+      // 高风险工具需要用户确认
+      const highRiskTools = ['delete_friend', 'leave_group', 'edit_moment', 'delete_moment'];
+      if (highRiskTools.includes(toolValidated.data.tool) && !body.confirmation_id) {
+        return NextResponse.json({ error: '该操作需要确认，请提供 confirmation_id' }, { status: 400 });
       }
       const client = await getSupabaseClient();
       const result = await executeToolDirectly(client, payload.userId, toolValidated.data.tool, toolValidated.data.params || {});
@@ -2161,12 +2172,6 @@ export async function POST(request: NextRequest) {
         response: `请求太频繁啦，请 ${rateLimit.resetIn} 秒后再试~`,
         type: 'text',
       }, { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } });
-    }
-
-    // CSRF 验证
-    const csrfToken = extractCsrfToken(request);
-    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
-      return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
     // 初始化审计日志

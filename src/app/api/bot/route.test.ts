@@ -124,7 +124,8 @@ describe('Bot API Routes', () => {
 
     it('returns 400 for invalid body', async () => {
       mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
-      const request = createRequest('POST', 'http://localhost/api/bot', { message: '' });
+      const csrfToken = generateCsrfToken('1');
+      const request = createRequest('POST', 'http://localhost/api/bot', { message: '' }, { 'X-CSRF-Token': csrfToken });
       const response = await POST(request);
       expect(response.status).toBe(400);
     });
@@ -192,6 +193,7 @@ describe('Bot API Routes', () => {
 
     it('executes tool directly when execute_tool is true', async () => {
       mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+      const csrfToken = generateCsrfToken('1');
       const mockSupabase = createMockSupabase();
       mockSupabase._chainable.maybeSingle = vi.fn()
         .mockResolvedValueOnce({ data: { friend_id: 2 }, error: null })
@@ -203,11 +205,37 @@ describe('Bot API Routes', () => {
         execute_tool: true,
         tool: 'delete_friend',
         params: { friend_id: 2 },
-      });
+        confirmation_id: 'confirm-123',
+      }, { 'X-CSRF-Token': csrfToken });
       const response = await POST(request);
       expect(response.status).toBe(200);
       const json = await response.json();
       expect(json.success).toBe(true);
+    });
+
+    it('returns 403 for execute_tool without CSRF token', async () => {
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+      const request = createRequest('POST', 'http://localhost/api/bot', {
+        execute_tool: true,
+        tool: 'delete_friend',
+        params: { friend_id: 2 },
+      });
+      const response = await POST(request);
+      expect(response.status).toBe(403);
+    });
+
+    it('returns 400 for execute_tool with high-risk tool without confirmation_id', async () => {
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+      const csrfToken = generateCsrfToken('1');
+      const request = createRequest('POST', 'http://localhost/api/bot', {
+        execute_tool: true,
+        tool: 'delete_friend',
+        params: { friend_id: 2 },
+      }, { 'X-CSRF-Token': csrfToken });
+      const response = await POST(request);
+      expect(response.status).toBe(400);
+      const json = await response.json();
+      expect(json.error).toContain('confirmation_id');
     });
   });
 });
