@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { getAuthUser } from '@/lib/auth-utils';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
+import { validateBody, botMessageSchema } from '@/lib/validation';
 import { POST as botPost } from '../route';
 
 function getOpenAIConfig() {
@@ -186,9 +188,24 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const body = await request.json();
-    const { message, conversation_id, system_prompt } = body;
-    const userMessage = message?.trim();
+    // CSRF 验证
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return new Response(encodeSSE({ error: 'CSRF验证失败', done: true }), {
+        status: 403,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+
+    const validated = await validateBody(request, botMessageSchema);
+    if (!validated.success) {
+      return new Response(encodeSSE({ error: validated.error, done: true }), {
+        status: 400,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+    const { message, conversation_id, system_prompt } = validated.data;
+    const userMessage = message.trim();
 
     if (!userMessage) {
       return new Response(encodeSSE({ error: '消息不能为空', done: true }), {

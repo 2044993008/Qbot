@@ -6,12 +6,12 @@ import { generateCsrfToken } from '@/lib/csrf';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
@@ -32,14 +32,14 @@ describe('Settings API Routes', () => {
 
   describe('GET /api/settings', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('GET', 'http://localhost/api/settings');
       const response = await GET(request);
       expect(response.status).toBe(401);
     });
 
     it('returns single setting by key', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSupabase = {
         from: vi.fn(() => ({
           select: vi.fn().mockReturnThis(),
@@ -58,7 +58,7 @@ describe('Settings API Routes', () => {
     });
 
     it('returns all settings when no key provided', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSettings = [
         { key: 'theme', value: 'dark' },
         { key: 'language', value: 'zh' },
@@ -79,7 +79,7 @@ describe('Settings API Routes', () => {
     });
 
     it('returns empty value when setting not found', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSupabase = {
         from: vi.fn(() => ({
           select: vi.fn().mockReturnThis(),
@@ -97,7 +97,7 @@ describe('Settings API Routes', () => {
     });
 
     it('returns 500 on database error', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSupabase = {
         from: vi.fn(() => ({
           select: vi.fn().mockReturnThis(),
@@ -115,21 +115,21 @@ describe('Settings API Routes', () => {
 
   describe('PUT /api/settings', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('PUT', 'http://localhost/api/settings', { key: 'theme', value: 'dark' });
       const response = await PUT(request);
       expect(response.status).toBe(401);
     });
 
     it('returns 403 for invalid CSRF token', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('PUT', 'http://localhost/api/settings', { key: 'theme', value: 'dark' }, { 'X-CSRF-Token': 'invalid' });
       const response = await PUT(request);
       expect(response.status).toBe(403);
     });
 
     it('returns 400 when key is missing', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const request = createRequest('PUT', 'http://localhost/api/settings', { value: 'dark' }, { 'X-CSRF-Token': csrfToken });
       const response = await PUT(request);
@@ -137,7 +137,7 @@ describe('Settings API Routes', () => {
     });
 
     it('updates existing setting successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSetting = { id: 1, user_id: 1, key: 'theme', value: 'dark', updated_at: '2025-01-01T00:00:00Z' };
       const mockSupabase = {
@@ -178,7 +178,7 @@ describe('Settings API Routes', () => {
     });
 
     it('creates new setting when not exists', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSetting = { id: 2, user_id: 1, key: 'language', value: 'zh', updated_at: '2025-01-01T00:00:00Z' };
       const mockSupabase = {
@@ -217,7 +217,7 @@ describe('Settings API Routes', () => {
     });
 
     it('returns 500 when database operation fails', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn(() => ({

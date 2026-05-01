@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
+import { validateBody, updateSettingsSchema } from '@/lib/validation';
 
 async function saveUserSetting(userId: number, key: string, value: string) {
   const client = getSupabaseClient();
@@ -105,13 +106,13 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
-    const { key, value } = await request.json();
-    
-    if (!key) {
-      return NextResponse.json({ error: '缺少设置键' }, { status: 400 });
+    const validated = await validateBody(request, updateSettingsSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+    const { key, value } = validated.data;
 
-    const data = await saveUserSetting(payload.userId, key, value || '');
+    const data = await saveUserSetting(payload.userId, key, String(value || ''));
 
     return NextResponse.json({ success: true, setting: data });
   } catch (err) {

@@ -28,6 +28,10 @@ describe('POST /api/auth/logout', () => {
   });
 
   it('returns 200 with success on logout', async () => {
+    vi.mocked(getAuthUser).mockReturnValue({ userId: 1, qqNumber: '10001' });
+    vi.mocked(extractCsrfToken).mockReturnValue('valid-csrf');
+    vi.mocked(verifyCsrfToken).mockReturnValue(true);
+
     const mockDelete = vi.fn();
     vi.mocked(cookies).mockReturnValue({
       get: vi.fn(),
@@ -35,7 +39,11 @@ describe('POST /api/auth/logout', () => {
       delete: mockDelete,
     } as unknown as ReturnType<typeof cookies>);
 
-    const response = await logoutPOST();
+    const request = new NextRequest('http://localhost/api/auth/logout', {
+      method: 'POST',
+    });
+
+    const response = await logoutPOST(request);
     const data = await response.json();
 
     expect(response.status).toBe(200);
@@ -44,11 +52,19 @@ describe('POST /api/auth/logout', () => {
   });
 
   it('returns 500 on cookie error', async () => {
+    vi.mocked(getAuthUser).mockReturnValue({ userId: 1, qqNumber: '10001' });
+    vi.mocked(extractCsrfToken).mockReturnValue('valid-csrf');
+    vi.mocked(verifyCsrfToken).mockReturnValue(true);
+
     vi.mocked(cookies).mockImplementation(() => {
       throw new Error('Cookie error');
     });
 
-    const response = await logoutPOST();
+    const request = new NextRequest('http://localhost/api/auth/logout', {
+      method: 'POST',
+    });
+
+    const response = await logoutPOST(request);
     const data = await response.json();
 
     expect(response.status).toBe(500);

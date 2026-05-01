@@ -86,6 +86,7 @@ export const momentLikeSchema = z.object({
 export const botMessageSchema = z.object({
   message: z.string().min(1).max(2000),
   conversation_id: z.number().int().positive().optional(),
+  system_prompt: z.string().optional(),
 });
 
 export const botToolExecuteSchema = z.object({

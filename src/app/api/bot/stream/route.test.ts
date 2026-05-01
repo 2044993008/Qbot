@@ -2,15 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { generateCsrfToken } from '@/lib/csrf';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
@@ -37,21 +38,30 @@ describe('Bot Stream API Route', () => {
   });
 
   it('returns 401 when not authenticated', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
     const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: 'hello' });
     const response = await POST(request);
     expect(response.status).toBe(401);
   });
 
+  it('returns 403 without valid CSRF token', async () => {
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: 'hello' }, { 'X-CSRF-Token': 'invalid' });
+    const response = await POST(request);
+    expect(response.status).toBe(403);
+  });
+
   it('returns 400 when message is empty', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
-    const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: '' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    const csrfToken = generateCsrfToken('1');
+    const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: '' }, { 'X-CSRF-Token': csrfToken });
     const response = await POST(request);
     expect(response.status).toBe(400);
   });
 
   it('returns SSE stream for simple request', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    const csrfToken = generateCsrfToken('1');
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
       body: new ReadableStream({
@@ -75,14 +85,15 @@ describe('Bot Stream API Route', () => {
     };
     mockedGetSupabaseClient.mockReturnValue(mockSupabase as unknown as ReturnType<typeof getSupabaseClient>);
 
-    const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: '你好' });
+    const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: '你好' }, { 'X-CSRF-Token': csrfToken });
     const response = await POST(request);
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('text/event-stream');
   });
 
   it('returns SSE stream for complex request via agent', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    const csrfToken = generateCsrfToken('1');
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -103,15 +114,16 @@ describe('Bot Stream API Route', () => {
     };
     mockedGetSupabaseClient.mockReturnValue(mockSupabase as unknown as ReturnType<typeof getSupabaseClient>);
 
-    const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: '先搜索然后发消息给小明' });
+    const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: '先搜索然后发消息给小明' }, { 'X-CSRF-Token': csrfToken });
     const response = await POST(request);
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('text/event-stream');
   });
 
   it('returns SSE stream with error event on fetch failure', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
-    const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: '你好' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    const csrfToken = generateCsrfToken('1');
+    const request = createRequest('POST', 'http://localhost/api/bot/stream', { message: '你好' }, { 'X-CSRF-Token': csrfToken });
     global.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
 
     const response = await POST(request);

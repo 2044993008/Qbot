@@ -64,8 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         throw new Error('登录失败，请检查账号密码');
       }
-    } finally {
       setIsLoading(false);
+    } catch (error) {
+      setIsLoading(false);
+      throw error;
     }
   };
 
@@ -78,8 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         throw new Error('注册失败，请重试');
       }
-    } finally {
       setIsLoading(false);
+    } catch (error) {
+      setIsLoading(false);
+      throw error;
     }
   };
 

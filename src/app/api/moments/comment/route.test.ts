@@ -6,12 +6,12 @@ import { generateCsrfToken } from '@/lib/csrf';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
@@ -48,21 +48,21 @@ describe('Moment Comment API Route', () => {
   });
 
   it('returns 401 when not authenticated', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
     const request = createRequest('POST', 'http://localhost/api/moments/comment', { moment_id: 1, content: 'Nice' });
     const response = await POST(request);
     expect(response.status).toBe(401);
   });
 
   it('returns 403 for invalid CSRF token', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const request = createRequest('POST', 'http://localhost/api/moments/comment', { moment_id: 1, content: 'Nice' }, { 'X-CSRF-Token': 'invalid' });
     const response = await POST(request);
     expect(response.status).toBe(403);
   });
 
   it('returns 400 when parameters are missing', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const csrfToken = generateCsrfToken('1');
     const request = createRequest('POST', 'http://localhost/api/moments/comment', { moment_id: 1 }, { 'X-CSRF-Token': csrfToken });
     const response = await POST(request);
@@ -70,7 +70,7 @@ describe('Moment Comment API Route', () => {
   });
 
   it('returns 404 when moment not found', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const csrfToken = generateCsrfToken('1');
     const mockSupabase = {
       from: vi.fn(() => createChain({ data: null, error: null })),
@@ -83,7 +83,7 @@ describe('Moment Comment API Route', () => {
   });
 
   it('creates comment successfully', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const csrfToken = generateCsrfToken('1');
     const mockComment = { id: 1, moment_id: 1, user_id: 1, content: 'Nice post!', created_at: '2025-01-01T00:00:00Z' };
     const mockUser = { id: 1, nickname: 'User1', avatar_color: '#ff0000' };
@@ -121,7 +121,7 @@ describe('Moment Comment API Route', () => {
   });
 
   it('returns 500 when insert fails', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const csrfToken = generateCsrfToken('1');
     const mockSupabase = {
       from: vi.fn((table: string) => {

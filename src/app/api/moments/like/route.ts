@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
+import { validateBody, momentLikeSchema } from '@/lib/validation';
 
 async function getMomentLikeCount(client: ReturnType<typeof getSupabaseClient>, momentId: number): Promise<number> {
   const { count, error } = await client
@@ -31,11 +32,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
-    const { moment_id } = await request.json();
-    
-    if (!moment_id) {
-      return NextResponse.json({ error: '缺少动态ID' }, { status: 400 });
+    const validated = await validateBody(request, momentLikeSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+    const { moment_id } = validated.data;
 
     const client = getSupabaseClient();
 
