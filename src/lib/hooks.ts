@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Conversation, Friend, Group, GroupMember, Message, Moment, ScheduledTask } from '@/lib/types';
 import { conversationsApi, friendsApi, groupsApi, messagesApi, momentsApi, tasksApi } from '@/lib/api';
 import { joinConversation, leaveConversation, onNewMessage, offNewMessage } from '@/lib/socket-client';
@@ -111,11 +111,14 @@ export function useGroups() {
 export function useMessages(conversationId: number | null) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const fetchInFlightRef = useRef(false);
 
   const fetchMessages = useCallback(() => {
     return (async () => {
       if (!conversationId) return;
-      
+      if (fetchInFlightRef.current) return;
+
+      fetchInFlightRef.current = true;
       setIsLoading(true);
       try {
         const response = await messagesApi.getList(conversationId);
@@ -124,6 +127,7 @@ export function useMessages(conversationId: number | null) {
         logger.error('获取消息列表失败:', { error: String(error) });
       } finally {
         setIsLoading(false);
+        fetchInFlightRef.current = false;
       }
     })();
   }, [conversationId]);

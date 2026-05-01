@@ -101,13 +101,12 @@ export default function ChatWindow({
     }
   }, [type, targetId]);
 
-  // 获取消息
+  // 重置消息分页状态
   useEffect(() => {
     if (conversationId) {
-      fetchMessages();
       setHasMoreMessages(true);
     }
-  }, [conversationId, fetchMessages]);
+  }, [conversationId]);
 
   // 滚动到底部
   useEffect(() => {
