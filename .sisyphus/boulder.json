@@ -89,6 +89,15 @@
       "agent": "Sisyphus-Junior",
       "category": "deep",
       "updated_at": "2026-05-01T05:21:24.266Z"
+    },
+    "todo:20": {
+      "task_key": "todo:20",
+      "task_label": "20",
+      "task_title": "Remove unused dependencies",
+      "session_id": "ses_21dffcf4affeVqKv9HRR0zcgjQ",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-05-01T06:23:34.789Z"
     }
   }
 }

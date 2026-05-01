@@ -829,76 +829,17 @@ Wave FINAL (After ALL 鈥?4 parallel reviews, then user okay):
 
 ### Wave 4: Module 6 鈥?Infrastructure Cleanup & E2E Completion
 
-- [ ] 20. Remove unused dependencies
-
-  **What to do**: Remove `@aws-sdk/client-s3`, `@aws-sdk/lib-storage` (0 imports, upload uses Supabase Storage), and `happy-dom` (installed but using jsdom). Run `pnpm remove` for each, verify with `pnpm test` and `pnpm run ts-check`.
-  **Must NOT do**: Do NOT remove any package that has actual imports.
-  **Recommended Agent Profile**: `quick`
-  **Parallelization**: YES with Tasks 21, 24
-  **Commit**: YES 鈥?`chore(deps): remove unused aws-sdk/* and happy-dom packages`
-
-- [ ] 21. Clean unused code (hook, types, schemas)
-
-  **What to do**: DELETE `src/hooks/use-mobile.ts` (0 imports). REMOVE `LoginResponse` and `ApiResponse<T>` from types.ts (0 imports). Verify with grep and `tsc --noEmit`.
-  **Must NOT do**: Do NOT remove types/schemas that are imported by test files.
-  **Recommended Agent Profile**: `quick`
-  **Parallelization**: YES with Tasks 20, 24
-  **Commit**: YES 鈥?`chore: remove unused code (useIsMobile hook, unused type exports)`
-
-- [ ] 22. Install error boundaries for all routes
-
-  **What to do**: Create `error.tsx` for root, app shell, chat/[id], moments, friends. Each with `'use client'`, error display, and Retry button. Test via Playwright.
-  **Must NOT do**: Do NOT create error boundaries for API routes (only pages).
-  **Recommended Agent Profile**: `medium` with `frontend-patterns`
-  **Parallelization**: YES with Tasks 23
-  **Blocked By**: Task 14 (Sidebar extraction)
-  **Commit**: YES 鈥?`feat(ui): add error boundaries for all page routes`
-
-- [ ] 23. Replace `<img>` with `next/image`
-
-  **What to do**: Replace plain `<img>` tags with `<Image>` from `next/image` in message-renderers.tsx and moments page.tsx. Add width, height, alt props. Verify rendering in Playwright.
-  **Recommended Agent Profile**: `medium` with `frontend-patterns`
-  **Parallelization**: YES with Tasks 22, 24
-  **Commit**: YES 鈥?`perf(ui): replace plain img tags with next/image for optimization`
-
-- [ ] 24. Add ARIA labels to icon-only buttons
-
-  **What to do**: Add `aria-label` to sidebar settings, chat back/X, upload button, @mention, moments remove-image, profile close. Add `role="img"` to Avatar.
-  **Recommended Agent Profile**: `quick`
-  **Parallelization**: YES with Tasks 20, 21, 23
-  **Commit**: YES 鈥?`a11y: add ARIA labels to icon-only buttons and avatar component`
-
-- [ ] 25. E2E test: Bot conversation flow
-
-  Create `e2e/bot-conversation.spec.ts`. Cover: open bot chat 鈫?send message 鈫?verify bot responds 鈫?preview confirmation. Test timeout handling.
-  **Recommended Agent Profile**: `medium` with `playwright` skill 路 **Parallelization**: YES with Tasks 26-30
-  **Commit**: YES 鈥?`test(e2e): add bot conversation flow test`
-
-- [ ] 26. E2E test: Moments publish + like + comment
-
-  Create `e2e/moments-flow.spec.ts`. Cover: publish text/image moments 鈫?like/unlike 鈫?comment 鈫?edit 鈫?delete. Test private visibility.
-  **Recommended Agent Profile**: `medium` with `playwright` skill 路 **Parallelization**: YES
-  **Commit**: YES 鈥?`test(e2e): add moments CRUD flow test`
-
-- [ ] 27. E2E test: Group chat @mention flow
-
-  Create `e2e/group-chat.spec.ts`. Cover: open group 鈫?type @ 鈫?member list 鈫?select member 鈫?send 鈫?verify mention rendered.
-  **Recommended Agent Profile**: `medium` with `playwright` skill 路 **Parallelization**: YES
-  **Commit**: YES 鈥?`test(e2e): add group chat @mention flow test`
-
-- [ ] 28. E2E test: Scheduled task CRUD
-
-  Create `e2e/scheduled-tasks.spec.ts`. Cover: create reminder 鈫?create send_message 鈫?edit cron 鈫?manually run 鈫?delete.
-  **Recommended Agent Profile**: `medium` with `playwright` skill 路 **Parallelization**: YES
-  **Commit**: YES 鈥?`test(e2e): add scheduled task CRUD flow test`
-
-- [ ] 29. E2E test: Profile settings update
-
-  Create `e2e/profile-settings.spec.ts`. Cover: change nickname 鈫?signature 鈫?avatar color 鈫?verify persistence on refresh.
-  **Recommended Agent Profile**: `medium` with `playwright` skill 路 **Parallelization**: YES
-  **Commit**: YES 鈥?`test(e2e): add profile settings update flow test`
-
-- [ ] 30. E2E test: Audit logs viewer
+- [x] 20. Remove unused dependencies
+- [x] 21. Clean unused code (hook, types, schemas)
+- [x] 22. Install error boundaries for all routes
+- [x] 23. Replace `<img>` with `next/image`
+- [x] 24. Add ARIA labels to icon-only buttons
+- [x] 25. E2E test: Bot conversation flow
+- [x] 26. E2E test: Moments publish + like + comment
+- [x] 27. E2E test: Group chat @mention flow
+- [x] 28. E2E test: Scheduled task CRUD
+- [x] 29. E2E test: Profile settings update
+- [x] 30. E2E test: Audit logs viewer
 
   Create `e2e/audit-logs.spec.ts`. Cover: navigate 鈫?verify entries 鈫?paginate 鈫?expand details.
   **Recommended Agent Profile**: `medium` with `playwright` skill 路 **Parallelization**: YES
