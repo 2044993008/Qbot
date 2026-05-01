@@ -1,30 +1,12 @@
 import type { User, Friend, Group, GroupMember, Conversation, Message, Moment, BotResponse, MessagePreview, ScheduledTask, BotAuditLog } from './types';
 
 const API_BASE = '/api';
-const TOKEN_KEY = 'qq_token';
-const CSRF_TOKEN_KEY = 'qq_csrf_token';
 
-// 获取 token（优先从 localStorage 获取）
+// 从 cookie 读取 token（用于 Socket.IO 等需要显式传递 token 的场景）
 export function getToken(): string | null {
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem(TOKEN_KEY);
-  }
-  return null;
-}
-
-// 获取 CSRF token
-function getCsrfToken(): string | null {
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem(CSRF_TOKEN_KEY);
-  }
-  return null;
-}
-
-// 设置 CSRF token
-export function setCsrfToken(token: string): void {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(CSRF_TOKEN_KEY, token);
-  }
+  if (typeof window === 'undefined') return null;
+  const match = document.cookie.match(/(?:^|; )qq_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 // 通用请求函数
@@ -32,28 +14,17 @@ async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  
+
   // 合并自定义 headers
   if (options.headers) {
     const customHeaders = options.headers as Record<string, string>;
     Object.assign(headers, customHeaders);
   }
-  
-  // 如果有 token，添加到 Authorization header
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
 
-  // 添加 CSRF token（状态变更请求）
-  const csrfToken = getCsrfToken();
-  if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method || '')) {
-    headers['X-CSRF-Token'] = csrfToken;
-  }
-  
+  // Auth 由 HttpOnly cookie 自动携带，无需手动注入 Authorization header
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers,
@@ -71,13 +42,13 @@ async function request<T>(
 // 认证 API
 export const authApi = {
   login: (qq_number: string, password: string) =>
-    request<{ token: string; user: User; success: boolean; csrf_token?: string }>('/auth/login', {
+    request<{ user: User; success: boolean }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ qq_number, password }),
     }),
 
   register: (qq_number: string, nickname: string, password: string) =>
-    request<{ token: string; user: User; success: boolean; csrf_token?: string }>('/auth/register', {
+    request<{ user: User; success: boolean }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ qq_number, nickname, password }),
     }),
@@ -86,7 +57,7 @@ export const authApi = {
     request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
 
   verify: () =>
-    request<{ authenticated: boolean; user?: User; csrf_token?: string }>('/auth/verify'),
+    request<{ authenticated: boolean; user?: User }>('/auth/verify'),
 };
 
 // 用户 API
@@ -266,18 +237,11 @@ export const uploadApi = {
     const formData = new FormData();
     formData.append('file', file);
 
-    // 获取本地存储的 token
-    const localToken = typeof window !== 'undefined' ? localStorage.getItem('qq_token') : null;
-    const headers: HeadersInit = {};
-    if (localToken) {
-      headers['Authorization'] = `Bearer ${localToken}`;
-    }
-
+    // Auth 由 HttpOnly cookie 自动携带
     const response = await fetch(`${API_BASE}/upload`, {
       method: 'POST',
       body: formData,
       credentials: 'include',
-      headers,
     });
 
     if (!response.ok) {

@@ -90,12 +90,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const csrfToken = generateCsrfToken(String(data.id));
-
+    // JWT 和 CSRF token 仅通过 HttpOnly cookie 传递，不在响应体中返回
     return NextResponse.json({
       success: true,
-      token,
-      csrf_token: csrfToken,
       user: data
     });
   } catch (err) {

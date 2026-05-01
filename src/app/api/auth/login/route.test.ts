@@ -80,7 +80,8 @@ describe('POST /api/auth/login', () => {
 
     expect(response.status).toBe(200);
     expect(data.success).toBe(true);
-    expect(data.token).toBeDefined();
+    expect(data).not.toHaveProperty('token');
+    expect(data).not.toHaveProperty('csrf_token');
     expect(data.user).toBeDefined();
     expect(data.user.qq_number).toBe('10001');
   });

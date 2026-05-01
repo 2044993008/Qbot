@@ -45,7 +45,16 @@ app.prepare().then(() => {
 
   io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.auth.token as string;
+      let token = socket.handshake.auth.token as string;
+
+      // 如果 auth.token 为空，尝试从 handshake 的 cookie 中读取（HttpOnly cookie）
+      if (!token && socket.handshake.headers.cookie) {
+        const match = socket.handshake.headers.cookie.match(/(?:^|; )qq_token=([^;]*)/);
+        if (match) {
+          token = decodeURIComponent(match[1]);
+        }
+      }
+
       if (!token) {
         return next(new Error('Authentication error: no token'));
       }

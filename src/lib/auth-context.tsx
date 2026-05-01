@@ -4,8 +4,6 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import type { User } from '@/lib/types';
 import { authApi } from '@/lib/api';
 
-const TOKEN_KEY = 'qq_token';
-
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
@@ -22,57 +20,35 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [token, setToken] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false); // 标记客户端是否准备就绪
 
-  // 从 localStorage 恢复 token（仅在客户端执行）
+  // 迁移清理：清除旧的 localStorage token（HttpOnly cookie 迁移）
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedToken = localStorage.getItem(TOKEN_KEY);
-      if (savedToken) {
-        setToken(savedToken);
-      }
+      localStorage.removeItem('qq_token');
+      localStorage.removeItem('qq_csrf_token');
       // 标记客户端已准备就绪
       setIsReady(true);
     }
   }, []);
 
   const refreshUser = useCallback(async () => {
-    // 如果没有 token，直接设置未登录状态
-    if (!token) {
-      setUser(null);
-      setIsLoading(false);
-      return;
-    }
-    
     setIsLoading(true);
     try {
       const response = await authApi.verify();
       if (response.authenticated && response.user) {
         setUser(response.user);
-        if (response.csrf_token && typeof window !== 'undefined') {
-          localStorage.setItem('qq_csrf_token', response.csrf_token);
-        }
       } else {
         setUser(null);
-        setToken(null);
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem('qq_csrf_token');
-      }
       }
     } catch {
       setUser(null);
-      setToken(null);
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem(TOKEN_KEY);
-      }
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, []);
 
-  // 当 token 准备好后，验证用户状态
+  // 当客户端准备就绪后，验证用户状态
   useEffect(() => {
     if (isReady) {
       refreshUser();
@@ -83,15 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const response = await authApi.login(qq_number, password);
-      if (response.success && response.token) {
+      if (response.success && response.user) {
         setUser(response.user);
-        setToken(response.token);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(TOKEN_KEY, response.token);
-          if (response.csrf_token) {
-            localStorage.setItem('qq_csrf_token', response.csrf_token);
-          }
-        }
       } else {
         throw new Error('登录失败，请检查账号密码');
       }
@@ -104,15 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const response = await authApi.register(qq_number, nickname, password);
-      if (response.success && response.token) {
+      if (response.success && response.user) {
         setUser(response.user);
-        setToken(response.token);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(TOKEN_KEY, response.token);
-          if (response.csrf_token) {
-            localStorage.setItem('qq_csrf_token', response.csrf_token);
-          }
-        }
       } else {
         throw new Error('注册失败，请重试');
       }
@@ -127,10 +89,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await authApi.logout();
     } finally {
       setUser(null);
-      setToken(null);
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem(TOKEN_KEY);
-      }
       setIsLoading(false);
     }
   };
