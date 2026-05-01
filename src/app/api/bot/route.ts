@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { checkUserRateLimit } from '@/lib/rate-limit';
 import { validateBody, botMessageSchema, botToolExecuteSchema } from '@/lib/validation';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
@@ -108,7 +108,11 @@ async function callOpenAICompatible(
     throw new Error(`LLM API error: ${data.error.message}`);
   }
 
-  return data.choices?.[0]?.message?.content || '';
+  const content = data.choices?.[0]?.message?.content;
+  if (!content || content.trim().length === 0) {
+    console.warn('[Bot] LLM returned empty content, choices:', JSON.stringify(data.choices));
+  }
+  return content?.trim() || '';
 }
 
 // 流式调用 LLM，返回 ReadableStream
@@ -1736,10 +1740,11 @@ function parseToolCalls(content: string): { name: string; arguments: Record<stri
 
 // 清理 LLM 输出中的工具调用标记
 function cleanContent(content: string): string {
-  return content
-    .replace(/\[TOOL_CALL:[^\]]+\]/g, '')
+  const cleaned = content
+    .replace(/\[TOOL_CALL:[\s\S]*?\]/g, '')
     .replace(/\[TOOL_CALL_END\]/g, '')
     .trim();
+  return cleaned;
 }
 
 // ============================================
@@ -2082,7 +2087,7 @@ async function runReActAgentWithTimeout(client: SupabaseClient, userId: number, 
 
 export async function GET(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
@@ -2124,7 +2129,7 @@ export async function POST(request: NextRequest) {
   } | null = null;
 
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }

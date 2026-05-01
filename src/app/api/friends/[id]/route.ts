@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { validateBody, updateFriendRemarkSchema } from '@/lib/validation';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
@@ -11,7 +11,7 @@ interface RouteParams {
 // GET - 获取好友详情
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PUT - 更新好友备注
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }

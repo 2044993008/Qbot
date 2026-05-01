@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
@@ -53,7 +53,7 @@ async function saveUserSetting(userId: number, key: string, value: string) {
 // GET - 获取用户设置
 export async function GET(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
 // PUT - 更新用户设置
 export async function PUT(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }

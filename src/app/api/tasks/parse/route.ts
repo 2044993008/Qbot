@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
 interface OpenAIMessage {
   role: 'system' | 'user';
@@ -53,7 +53,7 @@ async function callLLM(messages: OpenAIMessage[]): Promise<string> {
 // 解析自然语言时间为 cron 表达式
 export async function POST(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }

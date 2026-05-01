@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { POST as botPost } from '../route';
 
 function getOpenAIConfig() {
@@ -43,16 +43,21 @@ function simulateTextStream(content: string, preview?: Record<string, unknown>) 
           }
 
         // 逐字符发送模拟打字机效果
-        const chars = content.split('');
-        const delayMs = chars.length > 500 ? 5 : 15; // 长文本加速
-        for (const char of chars) {
-          controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'delta', content: char })));
-          if (delayMs > 0) {
-            await new Promise(r => setTimeout(r, delayMs));
+        if (content && content.length > 0) {
+          const chars = content.split('');
+          const delayMs = chars.length > 500 ? 5 : 15; // 长文本加速
+          for (const char of chars) {
+            controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'delta', content: char })));
+            if (delayMs > 0) {
+              await new Promise(r => setTimeout(r, delayMs));
+            }
           }
+        } else if (!preview) {
+          // 空内容且无预览，发送一个提示
+          controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'delta', content: '（暂无回复内容）' })));
         }
 
-        controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'done', fullContent: content })));
+        controller.enqueue(new TextEncoder().encode(encodeSSE({ type: 'done', fullContent: content || '' })));
         controller.close();
       } catch {
         controller.enqueue(new TextEncoder().encode(encodeSSE({ error: '流式处理错误', done: true })));
@@ -104,13 +109,16 @@ function directLLMStream(
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullContent = '';
+        let buffer = '';
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          // 保留最后一个可能不完整的行到缓冲区
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
@@ -170,7 +178,7 @@ function directLLMStream(
 
 export async function POST(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return new Response(encodeSSE({ error: '未登录', done: true }), {
         status: 401,
@@ -201,8 +209,21 @@ export async function POST(request: NextRequest) {
       const botResponse = await botPost(botRequest);
       const result = await botResponse.json();
 
+      // 检查 Agent 是否返回错误
+      if (result.error) {
+        console.error('[Bot Stream] Agent error:', result.error);
+        const stream = simulateTextStream('抱歉，我这边出了点小问题，能再说一遍吗？');
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          },
+        });
+      }
+
       // 将 Agent 结果转为 SSE 流
-      const stream = simulateTextStream(result.response || '', result.preview);
+      const stream = simulateTextStream(result.response || result.content || '', result.preview);
 
       return new Response(stream, {
         headers: {

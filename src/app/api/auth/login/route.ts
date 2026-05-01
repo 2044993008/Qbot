@@ -30,7 +30,10 @@ export async function POST(request: NextRequest) {
       .eq('qq_number', qq_number)
       .maybeSingle();
 
-    if (error) throw new Error(`查询用户失败: ${error.message}`);
+    if (error) {
+      console.error('Supabase error:', error);
+      throw new Error(`查询用户失败: ${error.message || JSON.stringify(error)}`);
+    }
     if (!data) {
       return NextResponse.json({ error: '用户不存在' }, { status: 401 });
     }

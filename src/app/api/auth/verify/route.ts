@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { generateCsrfToken } from '@/lib/csrf';
 
 // GET - 验证登录状态
 export async function GET(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     
     if (!payload || !payload.userId) {
       return NextResponse.json({ authenticated: false }, { status: 401 });

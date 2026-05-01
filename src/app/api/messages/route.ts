@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { checkUserRateLimit } from '@/lib/rate-limit';
 import { validateBody, sendMessageSchema } from '@/lib/validation';
@@ -48,7 +48,7 @@ async function verifyConversationOwnership(client: ReturnType<typeof getSupabase
 // GET - 获取消息列表
 export async function GET(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
 // POST - 发送消息
 export async function POST(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }

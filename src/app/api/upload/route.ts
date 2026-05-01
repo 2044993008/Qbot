@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { getSupabaseClient as getStorageClient } from '@/storage/database/supabase-client';
 import { checkUserRateLimit } from '@/lib/rate-limit';
@@ -9,7 +9,7 @@ import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 // POST - 上传图片
 export async function POST(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }

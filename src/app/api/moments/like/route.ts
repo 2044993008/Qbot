@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
@@ -20,7 +20,7 @@ async function getMomentLikeCount(client: ReturnType<typeof getSupabaseClient>, 
 // POST - 点赞/取消点赞
 export async function POST(request: NextRequest) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }

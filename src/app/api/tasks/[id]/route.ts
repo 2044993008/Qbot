@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 import { CronJob } from 'cron';
 
@@ -11,7 +11,7 @@ interface RouteParams {
 // GET - 获取单个定时任务
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PUT - 更新定时任务
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
@@ -123,7 +123,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 // DELETE - 删除定时任务
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }

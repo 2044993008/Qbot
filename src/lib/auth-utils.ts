@@ -86,6 +86,14 @@ export async function verifyTokenString(token: string): Promise<{ userId: number
   }
 }
 
+// 从请求头中获取认证用户信息（由 middleware 注入）
+export function getAuthUser(request: NextRequest): { userId: number; qqNumber: string } | null {
+  const userId = parseInt(request.headers.get('x-user-id') || '0');
+  const qqNumber = request.headers.get('x-qq-number') || '';
+  if (!userId) return null;
+  return { userId, qqNumber };
+}
+
 export async function isGroupMember(groupId: number, userId: number): Promise<boolean> {
   const client = getSupabaseClient();
   const { data, error } = await client

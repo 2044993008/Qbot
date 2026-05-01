@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
@@ -10,7 +10,7 @@ interface RouteParams {
 // PUT - 编辑动态
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
@@ -95,7 +95,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 // DELETE - 删除动态
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const payload = await verifyToken(request);
+    const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
