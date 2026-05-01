@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifyTokenString } from '@/lib/auth-utils';
+import { verifyTokenString } from '@/lib/auth-edge';
 
 // 认证中间件：集中验证 JWT token
 // 排除登录/注册/登出端点（它们自行处理认证）

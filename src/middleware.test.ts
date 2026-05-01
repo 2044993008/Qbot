@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { middleware } from '@/middleware';
-import { verifyTokenString } from '@/lib/auth-utils';
+import { verifyTokenString } from '@/lib/auth-edge';
 
-vi.mock('@/lib/auth-utils', () => ({
+vi.mock('@/lib/auth-edge', () => ({
   verifyTokenString: vi.fn(),
 }));
 

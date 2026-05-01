@@ -22,16 +22,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isReady, setIsReady] = useState(false); // 标记客户端是否准备就绪
 
-  // 迁移清理：清除旧的 localStorage token（HttpOnly cookie 迁移）
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('qq_token');
-      localStorage.removeItem('qq_csrf_token');
-      // 标记客户端已准备就绪
-      setIsReady(true);
-    }
-  }, []);
-
   const refreshUser = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -48,12 +38,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // 当客户端准备就绪后，验证用户状态
+  // 迁移清理 + 初始化验证
   useEffect(() => {
-    if (isReady) {
-      refreshUser();
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('qq_token');
+      localStorage.removeItem('qq_csrf_token');
+      // 先验证用户状态（确保 CSRF cookie 已设置），再标记就绪
+      refreshUser().then(() => {
+        setIsReady(true);
+      });
     }
-  }, [isReady, refreshUser]);
+  }, [refreshUser]);
 
   const login = async (qq_number: string, password: string) => {
     setIsLoading(true);

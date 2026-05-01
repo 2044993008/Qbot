@@ -9,6 +9,13 @@ export function getToken(): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+// 从 cookie 读取 CSRF token
+function getCsrfToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const match = document.cookie.match(/(?:^|; )qq_csrf=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 // 通用请求函数
 async function request<T>(
   endpoint: string,
@@ -22,6 +29,14 @@ async function request<T>(
   if (options.headers) {
     const customHeaders = options.headers as Record<string, string>;
     Object.assign(headers, customHeaders);
+  }
+
+  // 对写操作自动附加 CSRF token
+  if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
+    }
   }
 
   // Auth 由 HttpOnly cookie 自动携带，无需手动注入 Authorization header
@@ -237,11 +252,17 @@ export const uploadApi = {
     const formData = new FormData();
     formData.append('file', file);
 
-    // Auth 由 HttpOnly cookie 自动携带
+    const headers: Record<string, string> = {};
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
+    }
+
     const response = await fetch(`${API_BASE}/upload`, {
       method: 'POST',
       body: formData,
       credentials: 'include',
+      headers,
     });
 
     if (!response.ok) {

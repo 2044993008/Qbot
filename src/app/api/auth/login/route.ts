@@ -63,7 +63,16 @@ export async function POST(request: NextRequest) {
       path: '/',
     });
 
-    // JWT 和 CSRF token 仅通过 HttpOnly cookie 传递，不在响应体中返回
+    // 生成并设置 CSRF token（非 HttpOnly，供前端读取）
+    const csrfToken = generateCsrfToken(String(data.id));
+    cookieStore.set('qq_csrf', csrfToken, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60,
+      path: '/',
+    });
+
     return NextResponse.json({
       success: true,
       user: {

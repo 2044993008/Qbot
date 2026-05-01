@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
 
     const cookieStore = await cookies();
     cookieStore.delete('qq_token');
+    cookieStore.delete('qq_csrf');
 
     return NextResponse.json({ success: true });
   } catch (err) {
