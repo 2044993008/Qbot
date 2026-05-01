@@ -3,6 +3,7 @@ import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { getAuthUser } from '@/lib/auth-utils';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 import { validateBody, botMessageSchema } from '@/lib/validation';
+import { checkUserRateLimit } from '@/lib/rate-limit';
 import { POST as botPost } from '../route';
 
 function getOpenAIConfig() {
@@ -185,6 +186,15 @@ export async function POST(request: NextRequest) {
       return new Response(encodeSSE({ error: '未登录', done: true }), {
         status: 401,
         headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+
+    // Bot 流式请求限流：20次/分钟/用户
+    const limit = await checkUserRateLimit(payload.userId, { maxRequests: 20, windowMs: 60 * 1000, keyPrefix: 'bot_stream' });
+    if (!limit.allowed) {
+      return new Response(encodeSSE({ error: '请求过于频繁，请稍后再试', done: true }), {
+        status: 429,
+        headers: { 'Content-Type': 'text/event-stream', 'Retry-After': String(limit.retryAfter) },
       });
     }
 

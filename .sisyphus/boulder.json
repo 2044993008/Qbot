@@ -71,6 +71,24 @@
       "agent": "Sisyphus-Junior",
       "category": "deep",
       "updated_at": "2026-05-01T04:58:22.568Z"
+    },
+    "todo:15": {
+      "task_key": "todo:15",
+      "task_label": "15",
+      "task_title": "Bot execute_tool CSRF fix + confirmation gate",
+      "session_id": "ses_21e1779aaffepBgp7dyPSbc5p0",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-01T05:05:57.875Z"
+    },
+    "todo:16": {
+      "task_key": "todo:16",
+      "task_label": "16",
+      "task_title": "Bot AI agent contract tests (mock OpenAI)",
+      "session_id": "ses_21e1189d7ffejEvGuoORAv1AbP",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-01T05:21:24.266Z"
     }
   }
 }

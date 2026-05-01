@@ -142,7 +142,7 @@ export const updateUserSchema = z.object({
 // ============================================
 
 export const updateSettingsSchema = z.object({
-  key: z.string().min(1),
+  key: z.enum(['theme', 'language', 'notification_enabled', 'avatar_color']),
   value: z.unknown(),
 });
 

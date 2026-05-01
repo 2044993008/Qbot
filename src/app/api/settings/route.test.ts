@@ -136,6 +136,14 @@ describe('Settings API Routes', () => {
       expect(response.status).toBe(400);
     });
 
+    it('returns 400 when key is internal (bot_*)', async () => {
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+      const csrfToken = generateCsrfToken('1');
+      const request = createRequest('PUT', 'http://localhost/api/settings', { key: 'bot_api_key', value: 'secret' }, { 'X-CSRF-Token': csrfToken });
+      const response = await PUT(request);
+      expect(response.status).toBe(400);
+    });
+
     it('updates existing setting successfully', async () => {
       mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');

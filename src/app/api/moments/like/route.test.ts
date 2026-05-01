@@ -9,10 +9,17 @@ vi.mock('@/lib/auth-utils', () => ({
   getAuthUser: vi.fn(),
 }));
 
+// Mock rate-limit
+vi.mock('@/lib/rate-limit', () => ({
+  checkUserRateLimit: vi.fn(),
+}));
+
 import { getAuthUser } from '@/lib/auth-utils';
+import { checkUserRateLimit } from '@/lib/rate-limit';
 
 const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
+const mockedCheckUserRateLimit = vi.mocked(checkUserRateLimit);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
   return new NextRequest(url, {
@@ -45,6 +52,7 @@ function createChain(finalValue: { data: unknown; error: null | { message: strin
 describe('Moment Like API Route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedCheckUserRateLimit.mockResolvedValue({ allowed: true, remaining: 29, resetIn: 60, retryAfter: 0 });
   });
 
   it('returns 401 when not authenticated', async () => {
@@ -52,6 +60,17 @@ describe('Moment Like API Route', () => {
     const request = createRequest('POST', 'http://localhost/api/moments/like', { moment_id: 1 });
     const response = await POST(request);
     expect(response.status).toBe(401);
+  });
+
+  it('returns 429 when rate limit exceeded', async () => {
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    mockedCheckUserRateLimit.mockResolvedValue({ allowed: false, remaining: 0, resetIn: 30, retryAfter: 30 });
+    const csrfToken = generateCsrfToken('1');
+    const request = createRequest('POST', 'http://localhost/api/moments/like', { moment_id: 1 }, { 'X-CSRF-Token': csrfToken });
+    const response = await POST(request);
+    expect(response.status).toBe(429);
+    const json = await response.json();
+    expect(json.error).toContain('过于频繁');
   });
 
   it('returns 403 for invalid CSRF token', async () => {

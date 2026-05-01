@@ -3,6 +3,7 @@ import { getAuthUser } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 import { validateBody, momentLikeSchema } from '@/lib/validation';
+import { checkUserRateLimit } from '@/lib/rate-limit';
 
 async function getMomentLikeCount(client: ReturnType<typeof getSupabaseClient>, momentId: number): Promise<number> {
   const { count, error } = await client
@@ -24,6 +25,12 @@ export async function POST(request: NextRequest) {
     const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
+    // 点赞限流：30次/分钟/用户
+    const limit = await checkUserRateLimit(payload.userId, { maxRequests: 30, windowMs: 60 * 1000, keyPrefix: 'moment_like' });
+    if (!limit.allowed) {
+      return NextResponse.json({ error: '点赞过于频繁，请稍后再试' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
     }
 
     // CSRF 验证

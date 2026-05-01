@@ -51,7 +51,7 @@ interface UserRequestLock {
 const userRequestLocks = new Map<number, UserRequestLock>();
 
 // 获取用户请求锁（确保同一用户串行处理）
-async function acquireUserLock<T>(userId: number, fn: () => Promise<T>): Promise<T> {
+export async function acquireUserLock<T>(userId: number, fn: () => Promise<T>): Promise<T> {
   while (userRequestLocks.has(userId)) {
     const lock = userRequestLocks.get(userId)!;
     // 如果锁超过60秒，认为是死锁，强制释放
@@ -1717,7 +1717,7 @@ async function executeToolDirectly(client: SupabaseClient, userId: number, name:
 }
 
 // 解析 LLM 输出中的工具调用
-function parseToolCalls(content: string): { name: string; arguments: Record<string, unknown> }[] {
+export function parseToolCalls(content: string): { name: string; arguments: Record<string, unknown> }[] {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   // 匹配 [TOOL_CALL:...] 到 [TOOL_CALL_END] 之间的内容
   const regex = /\[TOOL_CALL:([\s\S]*?)\][\s\S]*?\[TOOL_CALL_END\]/g;
@@ -1739,7 +1739,7 @@ function parseToolCalls(content: string): { name: string; arguments: Record<stri
 }
 
 // 清理 LLM 输出中的工具调用标记
-function cleanContent(content: string): string {
+export function cleanContent(content: string): string {
   const cleaned = content
     .replace(/\[TOOL_CALL:[\s\S]*?\]/g, '')
     .replace(/\[TOOL_CALL_END\]/g, '')
