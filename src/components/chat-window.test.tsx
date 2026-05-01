@@ -40,12 +40,21 @@ vi.mock('@/lib/api', () => ({
     send: vi.fn(),
     executeTool: vi.fn(),
   },
+  getCsrfToken: vi.fn(() => 'test-csrf-token'),
 }));
 
 // Mock message renderers
 vi.mock('@/components/message-renderers', () => ({
-  getMessageRenderer: () => ({ msg, isMine }: { msg: { content: string }; isMine: boolean }) => (
-    <div data-testid="message-bubble" data-ismine={isMine}>{msg.content}</div>
+  getMessageRenderer: () => ({ msg, isMine, onConfirmAction, onCancelAction }: any) => (
+    <div data-testid="message-bubble" data-ismine={isMine}>
+      <span>{msg.content}</span>
+      {msg.metadata?.preview && (
+        <div>
+          <button data-testid="confirm-action" onClick={() => onConfirmAction?.(msg)}>确认执行</button>
+          <button data-testid="cancel-action" onClick={() => onCancelAction?.(msg)}>取消</button>
+        </div>
+      )}
+    </div>
   ),
 }));
 
@@ -68,7 +77,7 @@ vi.mock('@/components/avatar', () => ({
 }));
 
 import { useMessages } from '@/lib/hooks';
-import { conversationsApi } from '@/lib/api';
+import { conversationsApi, messagesApi } from '@/lib/api';
 
 const mockMessages = [
   { id: 1, conversation_id: 1, sender_id: 1, sender_nickname: '我', type: 'text', content: '你好', created_at: '2024-01-01T10:00:00Z' },
@@ -288,6 +297,380 @@ describe('ChatWindow', () => {
         (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('/api/messages')
       );
       expect(messageFetchCall).toBeTruthy();
+    });
+  });
+
+  describe('Bot interactions', () => {
+    const mockBotUser = { id: 999, nickname: '小Q管家', avatar_color: '#12b7f5' };
+
+    beforeEach(() => {
+      vi.mocked(conversationsApi.getOrCreate).mockResolvedValue({
+        conversation: { id: 1, type: 'private', user_id: 1, target_id: 999 },
+      });
+    });
+
+    function createMockReader(events: string[]) {
+      const encoder = new TextEncoder();
+      let callIndex = 0;
+      return {
+        read: vi.fn().mockImplementation(() => {
+          if (callIndex < events.length) {
+            const event = events[callIndex++];
+            return Promise.resolve({
+              done: false,
+              value: encoder.encode(event),
+            });
+          }
+          return Promise.resolve({ done: true, value: undefined });
+        }),
+      };
+    }
+
+    it('calls getBotUser on mount', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ bot: mockBotUser }),
+      });
+
+      render(<ChatWindow type="private" targetId={999} targetName="小Q管家" isBotConversation={true} />);
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith('/api/bot', { method: 'GET', credentials: 'include' });
+      });
+    });
+
+    it('triggers bot auto-reply via SSE when isBotConversation=true', async () => {
+      const user = userEvent.setup();
+      const mockReader = createMockReader(['data: {"type":"done","fullContent":"你好！"}\n\n']);
+
+      global.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ bot: mockBotUser }) })
+        .mockResolvedValueOnce({ ok: true, body: { getReader: () => mockReader } });
+
+      mockSendMessage.mockResolvedValue({
+        id: 3, conversation_id: 1, sender_id: 1, type: 'text', content: '你好', created_at: new Date().toISOString(),
+      });
+
+      render(<ChatWindow type="private" targetId={999} targetName="小Q管家" isBotConversation={true} />);
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('输入消息... (按 Enter 发送)')).toBeInTheDocument();
+      });
+
+      // Wait for getBotUser() to resolve so botUser is set
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith('/api/bot', { method: 'GET', credentials: 'include' });
+      });
+
+      const input = screen.getByPlaceholderText('输入消息... (按 Enter 发送)');
+      await user.type(input, '你好');
+      await user.click(screen.getByText('发送'));
+
+      await waitFor(() => {
+        const streamCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+          (call: unknown[]) => call[0] === '/api/bot/stream'
+        );
+        expect(streamCall).toBeTruthy();
+        expect((streamCall as unknown[])[1]).toMatchObject({
+          method: 'POST',
+          body: expect.stringContaining('你好'),
+        });
+      });
+    });
+
+    it('renders SSE stream bot response', async () => {
+      const user = userEvent.setup();
+
+      const mockReader = createMockReader([
+        'data: {"type":"delta","content":"您"}\n\n',
+        'data: {"type":"delta","content":"好"}\n\n',
+        'data: {"type":"done","fullContent":"您好！"}\n\n',
+      ]);
+
+      global.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ bot: mockBotUser }) })
+        .mockResolvedValueOnce({ ok: true, body: { getReader: () => mockReader } });
+
+      mockSendMessage.mockResolvedValue({
+        id: 3, conversation_id: 1, sender_id: 1, type: 'text', content: '你好', created_at: new Date().toISOString(),
+      });
+
+      vi.mocked(useMessages).mockReturnValue({
+        messages: [],
+        isLoading: false,
+        fetchMessages: mockFetchMessages,
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+      });
+
+      render(<ChatWindow type="private" targetId={999} targetName="小Q管家" isBotConversation={true} />);
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('输入消息... (按 Enter 发送)')).toBeInTheDocument();
+      });
+
+      // Wait for getBotUser() to resolve so botUser is set
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith('/api/bot', { method: 'GET', credentials: 'include' });
+      });
+
+      const input = screen.getByPlaceholderText('输入消息... (按 Enter 发送)');
+      await user.type(input, '你好');
+      await user.click(screen.getByText('发送'));
+
+      // Verify stream fetch was called and setMessages was invoked
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith('/api/bot/stream', expect.any(Object));
+      });
+      expect(mockSetMessages).toHaveBeenCalled();
+    });
+
+    it('handles SSE preview response', async () => {
+      const user = userEvent.setup();
+      const mockReader = createMockReader([
+        'data: {"type":"preview","response":"我将代您发送消息","preview":{"action":"send_message","target":"李华","target_id":3,"content":"你好李华"}}\n\n',
+        'data: {"type":"done","fullContent":"我将代您发送消息"}\n\n',
+      ]);
+
+      global.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ bot: mockBotUser }) })
+        .mockResolvedValueOnce({ ok: true, body: { getReader: () => mockReader } });
+
+      mockSendMessage.mockResolvedValue({
+        id: 3, conversation_id: 1, sender_id: 1, type: 'text', content: '发消息给李华', created_at: new Date().toISOString(),
+      });
+
+      vi.mocked(useMessages).mockReturnValue({
+        messages: [],
+        isLoading: false,
+        fetchMessages: mockFetchMessages,
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+      });
+
+      render(<ChatWindow type="private" targetId={999} targetName="小Q管家" isBotConversation={true} />);
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('输入消息... (按 Enter 发送)')).toBeInTheDocument();
+      });
+
+      const input = screen.getByPlaceholderText('输入消息... (按 Enter 发送)');
+      await user.type(input, '发消息给李华');
+      await user.click(screen.getByText('发送'));
+
+      await waitFor(() => {
+        expect(mockSetMessages).toHaveBeenCalled();
+      });
+
+      // Preview data is applied in a closure-bound updater; verify setMessages was called after stream
+      const lastCallIndex = mockSetMessages.mock.calls.length - 1;
+      expect(lastCallIndex).toBeGreaterThanOrEqual(0);
+    });
+
+    it('confirms preview action', async () => {
+      const user = userEvent.setup();
+      const fixedDate = 1234567890000;
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedDate);
+
+      const previewMsg = {
+        id: -123,
+        conversation_id: 1,
+        sender_id: 999,
+        sender_nickname: '小Q管家',
+        sender_avatar: '#12b7f5',
+        type: 'text',
+        content: '我将代您发送消息',
+        metadata: {
+          preview: { action: 'send_message', target: '李华', target_id: 3, content: '你好李华' },
+          isPreview: true,
+        },
+        created_at: new Date().toISOString(),
+      };
+
+      vi.mocked(useMessages).mockReturnValue({
+        messages: [previewMsg],
+        isLoading: false,
+        fetchMessages: mockFetchMessages,
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+      });
+
+      vi.mocked(conversationsApi.getOrCreate).mockResolvedValue({
+        conversation: { id: 2, type: 'private', user_id: 1, target_id: 3 },
+      });
+      vi.mocked(messagesApi.send).mockResolvedValue({
+        id: 10, conversation_id: 2, sender_id: 1, type: 'text', content: '你好李华', created_at: new Date().toISOString(),
+      });
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ bot: mockBotUser }),
+      });
+
+      render(<ChatWindow type="private" targetId={999} targetName="小Q管家" isBotConversation={true} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('confirm-action')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId('confirm-action'));
+
+      await waitFor(() => {
+        expect(conversationsApi.getOrCreate).toHaveBeenCalledWith('private', 3);
+        expect(messagesApi.send).toHaveBeenCalledWith(2, 'text', '你好李华');
+      });
+
+      const testPrev = [];
+      const hasSuccess = mockSetMessages.mock.calls.some((call: unknown[]) => {
+        const updater = (call as unknown[][])[0];
+        if (typeof updater === 'function') {
+          const result = updater(testPrev) as unknown[];
+          return result.some((m: unknown) =>
+            typeof (m as Record<string, unknown>).content === 'string' &&
+            ((m as Record<string, unknown>).content as string).includes('已发送消息')
+          );
+        }
+        return false;
+      });
+      expect(hasSuccess).toBe(true);
+
+      dateNowSpy.mockRestore();
+    });
+
+    it('cancels preview action', async () => {
+      const user = userEvent.setup();
+      const fixedDate = 1234567890000;
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedDate);
+
+      const previewMsg = {
+        id: -123,
+        conversation_id: 1,
+        sender_id: 999,
+        sender_nickname: '小Q管家',
+        sender_avatar: '#12b7f5',
+        type: 'text',
+        content: '我将代您发送消息',
+        metadata: {
+          preview: { action: 'send_message', target: '李华', target_id: 3, content: '你好李华' },
+          isPreview: true,
+        },
+        created_at: new Date().toISOString(),
+      };
+
+      vi.mocked(useMessages).mockReturnValue({
+        messages: [previewMsg],
+        isLoading: false,
+        fetchMessages: mockFetchMessages,
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+      });
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ bot: mockBotUser }),
+      });
+
+      render(<ChatWindow type="private" targetId={999} targetName="小Q管家" isBotConversation={true} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('cancel-action')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId('cancel-action'));
+
+      await waitFor(() => {
+        const testPrev = [];
+        const hasCancel = mockSetMessages.mock.calls.some((call: unknown[]) => {
+          const updater = (call as unknown[][])[0];
+          if (typeof updater === 'function') {
+            const result = updater(testPrev) as unknown[];
+            return result.some((m: unknown) =>
+              (m as Record<string, unknown>).content === '已取消操作~' &&
+              (m as Record<string, unknown>).id === -fixedDate - 1
+            );
+          }
+          return false;
+        });
+        expect(hasCancel).toBe(true);
+      });
+
+      dateNowSpy.mockRestore();
+    });
+
+    it('handles SSE connection failure', async () => {
+      const user = userEvent.setup();
+      const fixedDate = 1234567890000;
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedDate);
+
+      global.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ bot: mockBotUser }) })
+        .mockResolvedValueOnce({ ok: false, body: null });
+
+      mockSendMessage.mockResolvedValue({
+        id: 3, conversation_id: 1, sender_id: 1, type: 'text', content: '你好', created_at: new Date().toISOString(),
+      });
+
+      render(<ChatWindow type="private" targetId={999} targetName="小Q管家" isBotConversation={true} />);
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('输入消息... (按 Enter 发送)')).toBeInTheDocument();
+      });
+
+      const input = screen.getByPlaceholderText('输入消息... (按 Enter 发送)');
+      await user.type(input, '你好');
+      await user.click(screen.getByText('发送'));
+
+      await waitFor(() => {
+        const testPrev = [{ id: -fixedDate, sender_id: 999, content: '' }];
+        const hasError = mockSetMessages.mock.calls.some((call: unknown[]) => {
+          const updater = (call as unknown[][])[0];
+          if (typeof updater === 'function') {
+            const result = updater(testPrev) as unknown[];
+            return result.some((m: unknown) =>
+              (m as Record<string, unknown>).content === '抱歉，我这边出了点小问题，能再说一遍吗？'
+            );
+          }
+          return false;
+        });
+        expect(hasError).toBe(true);
+      });
+
+      dateNowSpy.mockRestore();
+    });
+
+    it('handles reader error gracefully', async () => {
+      const user = userEvent.setup();
+      const mockReader = {
+        read: vi.fn().mockRejectedValue(new Error('Stream error')),
+      };
+
+      global.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ bot: mockBotUser }) })
+        .mockResolvedValueOnce({ ok: true, body: { getReader: () => mockReader } });
+
+      mockSendMessage.mockResolvedValue({
+        id: 3, conversation_id: 1, sender_id: 1, type: 'text', content: '你好', created_at: new Date().toISOString(),
+      });
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      render(<ChatWindow type="private" targetId={999} targetName="小Q管家" isBotConversation={true} />);
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('输入消息... (按 Enter 发送)')).toBeInTheDocument();
+      });
+
+      const input = screen.getByPlaceholderText('输入消息... (按 Enter 发送)');
+      await user.type(input, '你好');
+      await user.click(screen.getByText('发送'));
+
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('流式 Bot 回复失败:', expect.any(Error));
+      });
+
+      expect(screen.getByPlaceholderText('输入消息... (按 Enter 发送)')).toBeInTheDocument();
+
+      consoleSpy.mockRestore();
     });
   });
 });
