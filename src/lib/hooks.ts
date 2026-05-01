@@ -81,7 +81,7 @@ export function useGroups() {
         const response = await groupsApi.getList();
         setGroups(response.groups || []);
       } catch (error) {
-        logger.error('获取群列表失�?', { error: String(error) });
+        logger.error('获取群列表失败', { error: String(error) });
       } finally {
         setIsLoading(false);
       }
@@ -94,7 +94,7 @@ export function useGroups() {
         const response = await groupsApi.getMembers(groupId);
         return response.members || [];
       } catch (error) {
-        logger.error('获取群成员失�?', { error: String(error) });
+        logger.error('获取群成员失败', { error: String(error) });
         return [];
       }
     })();
@@ -181,7 +181,7 @@ export function useMessages(conversationId: number | null) {
         }
         return response.message;
       } catch (error) {
-        logger.error('发送消息失�?', { error: String(error) });
+        logger.error('发送消息失败', { error: String(error) });
         return null;
       }
     })();
@@ -207,7 +207,7 @@ export function useMoments(userId?: number) {
         const response = await momentsApi.getList(userId);
         setMoments(response.moments || []);
       } catch (error) {
-        logger.error('获取动态列表失�?', { error: String(error) });
+        logger.error('获取动态列表失败', { error: String(error) });
       } finally {
         setIsLoading(false);
       }
@@ -223,7 +223,7 @@ export function useMoments(userId?: number) {
         }
         return response.moment;
       } catch (error) {
-        logger.error('发布动态失�?', { error: String(error) });
+        logger.error('发布动态失败', { error: String(error) });
         throw error;
       }
     })();
@@ -276,7 +276,7 @@ export function useMoments(userId?: number) {
         }
         return response.moment;
       } catch (error) {
-        logger.error('编辑动态失�?', { error: String(error) });
+        logger.error('编辑动态失败', { error: String(error) });
         throw error;
       }
     })();
@@ -288,7 +288,7 @@ export function useMoments(userId?: number) {
         await momentsApi.delete(momentId);
         setMoments(prev => prev.filter(m => m.id !== momentId));
       } catch (error) {
-        logger.error('删除动态失�?', { error: String(error) });
+        logger.error('删除动态失败', { error: String(error) });
         throw error;
       }
     })();

@@ -32,7 +32,7 @@ export default function LoginPage() {
       // 登录成功，显示提示并跳转
       setLoginSuccess(true);
       setTimeout(() => {
-        window.location.href = '/app';
+        router.push('/app');
       }, 500);
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败，请检查账号密码');
@@ -61,7 +61,7 @@ export default function LoginPage() {
     try {
       await register(registerForm.qq_number, registerForm.nickname, registerForm.password);
       // 注册成功，强制跳转
-      window.location.href = '/app';
+      router.push('/app');
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册失败，请重试');
     }

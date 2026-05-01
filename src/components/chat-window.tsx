@@ -1,17 +1,15 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { flushSync } from 'react-dom';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { useMessages, useGroups } from '@/lib/hooks';
+import { useMessages } from '@/lib/hooks';
 import { botApi, conversationsApi, messagesApi, momentsApi, getCsrfToken } from '@/lib/api';
-import { Send, Image as ImageIcon, AtSign, X, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
-import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
+import { Send, Image as ImageIcon, AtSign, X, ChevronUp, Loader2 } from 'lucide-react';
+import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/lib/auth-context';
-import type { GroupMember, Message, SearchResult, User, BotResponse, BotPreviewAction } from '@/lib/types';
+import type { GroupMember, Message, User, BotResponse, BotPreviewAction } from '@/lib/types';
 import { getMessageRenderer } from '@/components/message-renderers';
 
 interface ChatWindowProps {
@@ -349,7 +347,7 @@ export default function ChatWindow({
     if (preview.action === 'generate_video') {
       const result = await botApi.executeTool('generate_video', { prompt: preview.prompt, duration: preview.duration });
       if (result.videoUrl && conversationId) {
-        await messagesApi.send(conversationId, 'image', result.videoUrl);
+        await messagesApi.send(conversationId, 'file', result.videoUrl);
         return { success: true, message: '视频已生成并发送' };
       }
       return { success: false, message: result.error || '视频生成失败' };

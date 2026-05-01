@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { getAuthUser } from '@/lib/auth-utils';
 import { checkUserRateLimit } from '@/lib/rate-limit';
-import { validateBody, botMessageSchema, botToolExecuteSchema } from '@/lib/validation';
+import { botMessageSchema, botToolExecuteSchema } from '@/lib/validation';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 // ============================================

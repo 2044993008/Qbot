@@ -210,6 +210,7 @@ export async function POST(request: NextRequest) {
                 'Content-Type': 'application/json',
                 'Cookie': request.headers.get('cookie') || '',
                 'Authorization': request.headers.get('authorization') || '',
+                'X-CSRF-Token': request.headers.get('x-csrf-token') || '',
               },
               body: JSON.stringify({ message: query, conversation_id }),
             });
