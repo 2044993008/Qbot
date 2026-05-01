@@ -6,7 +6,7 @@ import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useMessages, useGroups } from '@/lib/hooks';
-import { botApi, conversationsApi, messagesApi, momentsApi } from '@/lib/api';
+import { botApi, conversationsApi, messagesApi, momentsApi, getCsrfToken } from '@/lib/api';
 import { Send, Image as ImageIcon, AtSign, X, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -232,10 +232,12 @@ export default function ChatWindow({
     setMessages(prev => [...prev, tempMessage]);
 
     try {
+      const csrfToken = getCsrfToken();
       const response = await fetch('/api/bot/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
         },
         credentials: 'include',
         body: JSON.stringify({

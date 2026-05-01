@@ -10,7 +10,7 @@ export function getToken(): string | null {
 }
 
 // 从 cookie 读取 CSRF token
-function getCsrfToken(): string | null {
+export function getCsrfToken(): string | null {
   if (typeof window === 'undefined') return null;
   const match = document.cookie.match(/(?:^|; )qq_csrf=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : null;
