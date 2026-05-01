@@ -4,6 +4,10 @@ import { POST as loginPOST, GET as loginGET } from './route';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { verifyToken } from '@/lib/auth-utils';
 
+// Mutable rate limit state for edge case testing
+let rateLimitAllowed = true;
+let rateLimitRetryAfter = 0;
+
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
   verifyToken: vi.fn(),
@@ -16,7 +20,12 @@ vi.mock('bcryptjs', () => ({
 }));
 
 vi.mock('@/lib/rate-limit', () => ({
-  rateLimitMiddleware: () => () => Promise.resolve({ allowed: true, remaining: 5, resetIn: 60, retryAfter: 0 }),
+  rateLimitMiddleware: () => () => Promise.resolve({
+    allowed: rateLimitAllowed,
+    remaining: rateLimitAllowed ? 5 : 0,
+    resetIn: 60,
+    retryAfter: rateLimitRetryAfter,
+  }),
 }));
 
 vi.mock('@/lib/csrf', () => ({
@@ -38,6 +47,8 @@ describe('POST /api/auth/login', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedVerifyToken.mockReset();
+    rateLimitAllowed = true;
+    rateLimitRetryAfter = 0;
   });
 
   it('returns 200 with token and user on valid credentials', async () => {
@@ -182,6 +193,49 @@ describe('POST /api/auth/login', () => {
 
     expect(response.status).toBe(500);
     expect(data.error).toContain('服务器错误');
+  });
+
+  it('returns 429 when rate limit exceeded', async () => {
+    rateLimitAllowed = false;
+    rateLimitRetryAfter = 60;
+
+    const request = new NextRequest('http://localhost/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ qq_number: '10001', password: '123456' }),
+    });
+
+    const response = await loginPOST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(data.error).toContain('请求过于频繁');
+    expect(response.headers.get('Retry-After')).toBe('60');
+  });
+
+  it('returns 400 on empty request body', async () => {
+    const request = new NextRequest('http://localhost/api/auth/login', {
+      method: 'POST',
+      body: '',
+    });
+
+    const response = await loginPOST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.error).toContain('无效的请求格式');
+  });
+
+  it('returns 400 when required fields are missing', async () => {
+    const request = new NextRequest('http://localhost/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ qq_number: '10001' }),
+    });
+
+    const response = await loginPOST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.error).toBeDefined();
   });
 });
 

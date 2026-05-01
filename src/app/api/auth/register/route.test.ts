@@ -198,4 +198,100 @@ describe('POST /api/auth/register', () => {
     expect(response.status).toBe(500);
     expect(data.error).toContain('服务器错误');
   });
+
+  it('returns 400 when password is too short', async () => {
+    const request = new NextRequest('http://localhost/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ qq_number: '10001', nickname: 'TestUser', password: '12345' }),
+    });
+
+    const response = await registerPOST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.error).toBeDefined();
+  });
+
+  it('returns 400 when nickname is missing', async () => {
+    const request = new NextRequest('http://localhost/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ qq_number: '10001', password: '123456' }),
+    });
+
+    const response = await registerPOST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.error).toBeDefined();
+  });
+
+  it('creates auto-friend relationship with bot on successful registration', async () => {
+    const mockUser = {
+      id: 1,
+      qq_number: '10001',
+      nickname: 'TestUser',
+      avatar_color: '#3b82f6',
+      signature: '这个人很懒，什么都没写',
+      status: 'online',
+    };
+
+    const friendsInserts: Array<{ user_id: number; friend_id: number }> = [];
+    let callCount = 0;
+    const mockSupabase = {
+      from: vi.fn((table: string) => {
+        callCount++;
+        if (callCount === 1 && table === 'users') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
+              })),
+            })),
+          };
+        }
+        if (callCount === 2 && table === 'users') {
+          return {
+            insert: vi.fn(() => ({
+              select: vi.fn(() => ({
+                single: vi.fn(() => Promise.resolve({ data: mockUser, error: null })),
+              })),
+            })),
+          };
+        }
+        if (callCount === 3 && table === 'users') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(() => Promise.resolve({ data: { id: 99 }, error: null })),
+              })),
+            })),
+          };
+        }
+        if (callCount >= 4 && table === 'friends') {
+          return {
+            insert: vi.fn((row: any) => {
+              friendsInserts.push(row);
+              return Promise.resolve({ data: null, error: null });
+            }),
+          };
+        }
+        return {};
+      }),
+    };
+    mockedGetSupabaseClient.mockReturnValue(mockSupabase as unknown as ReturnType<typeof getSupabaseClient>);
+
+    const request = new NextRequest('http://localhost/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ qq_number: '10001', nickname: 'TestUser', password: '123456' }),
+    });
+
+    const response = await registerPOST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.success).toBe(true);
+    expect(friendsInserts).toHaveLength(2);
+    expect(friendsInserts[0]).toEqual({ user_id: 1, friend_id: 99 });
+    expect(friendsInserts[1]).toEqual({ user_id: 99, friend_id: 1 });
+  });
 });
