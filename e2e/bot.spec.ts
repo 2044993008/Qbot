@@ -1,12 +1,12 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-async function sendToBot(page: any, message: string) {
+async function sendToBot(page: Page, message: string) {
   await page.locator('text=/小.?Q.?管家/').first().click();
   await page.fill('input[placeholder*="输入消息"], textarea[placeholder*="输入消息"]', message);
   await page.click('button[type="submit"], button:has(.lucide-send)');
 }
 
-async function hasBotPreview(page: any, timeout = 20000) {
+async function hasBotPreview(page: Page, timeout = 20000) {
   try {
     await page.locator('text=/确认|取消|preview|操作|润色|发送|表情包|空间/i').first().waitFor({ timeout });
     return true;
@@ -15,7 +15,7 @@ async function hasBotPreview(page: any, timeout = 20000) {
   }
 }
 
-async function hasBotResponse(page: any, timeout = 20000) {
+async function hasBotResponse(page: Page, timeout = 20000) {
   try {
     await page.locator('.message-bubble, [data-testid="message"]').nth(1).waitFor({ timeout });
     return true;

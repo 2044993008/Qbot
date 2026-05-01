@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { getAuthUser } from '@/lib/auth-utils';
 import { executeTask } from '@/services/scheduler';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 // POST - 手动触发执行定时任务
 export async function POST(request: NextRequest) {
@@ -9,6 +10,11 @@ export async function POST(request: NextRequest) {
     const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF验证失败' }, { status: 403 });
     }
 
     const body = await request.json();

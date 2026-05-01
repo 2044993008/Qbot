@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth-utils';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 
 interface OpenAIMessage {
   role: 'system' | 'user';
@@ -56,6 +57,11 @@ export async function POST(request: NextRequest) {
     const payload = getAuthUser(request);
     if (!payload) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+
+    const csrfToken = extractCsrfToken(request);
+    if (!csrfToken || !verifyCsrfToken(csrfToken, String(payload.userId))) {
+      return NextResponse.json({ error: 'CSRF验证失败' }, { status: 403 });
     }
 
     const { text } = await request.json();

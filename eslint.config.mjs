@@ -46,6 +46,9 @@ const eslintConfig = defineConfig([
     'dist/**',
     // Script files (CommonJS):
     'scripts/**/*.js',
+    // Test artifacts:
+    'playwright-report/**',
+    'coverage/**',
   ]),
 ]);
 

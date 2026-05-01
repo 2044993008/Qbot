@@ -7,16 +7,24 @@ vi.mock('@/lib/auth-utils', () => ({
   getAuthUser: vi.fn(),
 }));
 
+vi.mock('@/lib/csrf', () => ({
+  extractCsrfToken: vi.fn(),
+  verifyCsrfToken: vi.fn(),
+}));
+
 // Mock seed module
 vi.mock('@/server/db/seed', () => ({
   POST: vi.fn(),
 }));
 
 import { getAuthUser } from '@/lib/auth-utils';
+import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 import { POST as seedPost } from '@/server/db/seed';
 
 const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedSeedPost = vi.mocked(seedPost);
+const mockedExtractCsrfToken = vi.mocked(extractCsrfToken);
+const mockedVerifyCsrfToken = vi.mocked(verifyCsrfToken);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
   return new NextRequest(url, {
@@ -32,6 +40,8 @@ function createRequest(method: string, url: string, body?: Record<string, unknow
 describe('Seed API Route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedExtractCsrfToken.mockReturnValue('valid-csrf');
+    mockedVerifyCsrfToken.mockReturnValue(true);
   });
 
   it('returns 401 when not authenticated', async () => {
