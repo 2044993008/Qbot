@@ -247,7 +247,8 @@ export default function ScheduledTasksPage() {
   const isPageLoading = isLoading || authLoading;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[#f5f5f5]">
+    <>
+      <div className="flex-1 flex flex-col overflow-hidden bg-[#f5f5f5]">
       <Toaster />
         {/* 移动端顶部 */}
         <div className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b">
@@ -553,6 +554,6 @@ export default function ScheduledTasksPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-    </div>
+    </>
   );
 }

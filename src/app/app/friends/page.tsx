@@ -86,7 +86,8 @@ export default function FriendsPage() {
   );
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <>
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* 移动端顶部 */}
         <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b">
           <h1 className="text-lg font-semibold">联系人</h1>
@@ -209,6 +210,6 @@ export default function FriendsPage() {
         />
       )}
 
-    </div>
+    </>
   );
 }

@@ -315,6 +315,5 @@ export default function AuditLogsPage() {
         </ScrollArea>
       </div>
 
-    </div>
   );
 }
