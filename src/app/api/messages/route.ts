@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { checkUserRateLimit } from '@/lib/rate-limit';
-import { validateBody, sendMessageSchema } from '@/lib/validation';
+import { validateBody, validateQuery, sendMessageSchema, getMessagesSchema } from '@/lib/validation';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
 import type { Message } from '@/lib/types';
 
@@ -53,20 +53,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const conversation_id = searchParams.get('conversation_id');
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const offset = parseInt(searchParams.get('offset') || '0');
-    const before = searchParams.get('before'); // 用于加载历史消息
-
-    if (!conversation_id) {
-      return NextResponse.json({ error: '缺少会话ID' }, { status: 400 });
+    const validated = validateQuery(request.url, getMessagesSchema);
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+    const { conversation_id, limit, offset, before } = validated.data;
 
     const client = getSupabaseClient();
 
     // 校验会话归属（防止越权读取）
-    const isOwner = await verifyConversationOwnership(client, parseInt(conversation_id), payload.userId);
+    const isOwner = await verifyConversationOwnership(client, conversation_id, payload.userId);
     if (!isOwner) {
       return NextResponse.json({ error: '无权访问该会话' }, { status: 403 });
     }

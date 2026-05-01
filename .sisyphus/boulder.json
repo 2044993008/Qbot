@@ -1,0 +1,76 @@
+{
+  "active_plan": "E:\\Agent_Projects\\projects\\.sisyphus\\plans\\project-audit-test.md",
+  "started_at": "2026-05-01T02:49:10.708Z",
+  "session_ids": [
+    "ses_21edbc2a3ffekCLl7tPEqlUeh3"
+  ],
+  "session_origins": {
+    "ses_21edbc2a3ffekCLl7tPEqlUeh3": "direct"
+  },
+  "plan_name": "project-audit-test",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Extract auth middleware to middleware.ts",
+      "session_id": "ses_21e8da59affe1xHCWh1X5BySH2",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-01T03:21:01.984Z"
+    },
+    "todo:2": {
+      "task_key": "todo:2",
+      "task_label": "2",
+      "task_title": "JWT + CSRF hardening (HttpOnly cookie migration)",
+      "session_id": "ses_21e6e7d81ffeO0IKAKLTpAGdgQ",
+      "agent": "Sisyphus-Junior",
+      "updated_at": "2026-05-01T03:45:06.427Z"
+    },
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "TDD tests for auth API routes",
+      "session_id": "ses_21e5a5a03ffe6zeVrgJzJB87Vw",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-01T03:56:26.991Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Fix AuthContext login() error propagation bug",
+      "session_id": "ses_21e503da9ffeL156VN5f1attNk",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-01T04:08:00.658Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Fix dual chat routing architecture",
+      "session_id": "ses_21e44b35affe57J2GhizAZ2LdX",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-01T04:33:34.474Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Fix useMessages race condition (double fetchMessages)",
+      "session_id": "ses_21e2e8998ffeQfwXmtvfZuBvfC",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-01T04:39:23.504Z"
+    },
+    "todo:8": {
+      "task_key": "todo:8",
+      "task_label": "8",
+      "task_title": "TDD tests for messages/route.ts (most complex route)",
+      "session_id": "ses_21e29a5beffeogWb5VnY2KENl7",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-01T04:58:22.568Z"
+    }
+  }
+}

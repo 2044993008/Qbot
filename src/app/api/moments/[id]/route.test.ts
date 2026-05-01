@@ -6,12 +6,12 @@ import { generateCsrfToken } from '@/lib/csrf';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
@@ -32,28 +32,28 @@ describe('Moment Detail API Routes', () => {
 
   describe('PUT /api/moments/[id]', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('PUT', 'http://localhost/api/moments/1', { content: 'updated' });
       const response = await PUT(request, { params: Promise.resolve({ id: '1' }) });
       expect(response.status).toBe(401);
     });
 
     it('returns 400 for invalid moment ID', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('PUT', 'http://localhost/api/moments/invalid', { content: 'updated' });
       const response = await PUT(request, { params: Promise.resolve({ id: 'invalid' }) });
       expect(response.status).toBe(400);
     });
 
     it('returns 403 for invalid CSRF token', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('PUT', 'http://localhost/api/moments/1', { content: 'updated' }, { 'X-CSRF-Token': 'invalid' });
       const response = await PUT(request, { params: Promise.resolve({ id: '1' }) });
       expect(response.status).toBe(403);
     });
 
     it('returns 404 when moment not found', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn(() => ({
@@ -70,7 +70,7 @@ describe('Moment Detail API Routes', () => {
     });
 
     it('returns 403 when user does not own the moment', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn(() => ({
@@ -87,7 +87,7 @@ describe('Moment Detail API Routes', () => {
     });
 
     it('updates moment successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockMoment = { id: 1, user_id: 1, content: 'updated', images: [], like_count: 2, comment_count: 1, created_at: '2025-01-01T00:00:00Z' };
       const mockUser = { id: 1, nickname: 'User1', avatar_color: '#ff0000' };
@@ -123,28 +123,28 @@ describe('Moment Detail API Routes', () => {
 
   describe('DELETE /api/moments/[id]', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('DELETE', 'http://localhost/api/moments/1');
       const response = await DELETE(request, { params: Promise.resolve({ id: '1' }) });
       expect(response.status).toBe(401);
     });
 
     it('returns 400 for invalid moment ID', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('DELETE', 'http://localhost/api/moments/invalid');
       const response = await DELETE(request, { params: Promise.resolve({ id: 'invalid' }) });
       expect(response.status).toBe(400);
     });
 
     it('returns 403 for invalid CSRF token', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('DELETE', 'http://localhost/api/moments/1', undefined, { 'X-CSRF-Token': 'invalid' });
       const response = await DELETE(request, { params: Promise.resolve({ id: '1' }) });
       expect(response.status).toBe(403);
     });
 
     it('returns 404 when moment not found', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn(() => ({
@@ -161,7 +161,7 @@ describe('Moment Detail API Routes', () => {
     });
 
     it('deletes moment successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn((table: string) => {
@@ -189,7 +189,7 @@ describe('Moment Detail API Routes', () => {
     });
 
     it('returns 500 when delete fails', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn(() => ({

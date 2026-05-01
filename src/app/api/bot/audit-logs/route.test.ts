@@ -5,12 +5,12 @@ import { getSupabaseClient } from '@/storage/database/supabase-client';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 function createRequest(url: string) {
@@ -23,14 +23,14 @@ describe('Bot Audit Logs API Route', () => {
   });
 
   it('returns 401 when not authenticated', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
     const request = createRequest('http://localhost/api/bot/audit-logs');
     const response = await GET(request);
     expect(response.status).toBe(401);
   });
 
   it('returns audit logs successfully', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const mockLogs = [
       { id: 1, user_id: 1, request: 'hello', response: 'hi', created_at: '2025-01-01T00:00:00Z' },
       { id: 2, user_id: 1, request: 'help', response: 'sure', created_at: '2025-01-02T00:00:00Z' },
@@ -56,7 +56,7 @@ describe('Bot Audit Logs API Route', () => {
   });
 
   it('returns 500 when database query fails', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const mockSupabase = {
       from: vi.fn(() => ({
         select: vi.fn().mockReturnThis(),
@@ -73,7 +73,7 @@ describe('Bot Audit Logs API Route', () => {
   });
 
   it('returns empty array when no logs exist', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const mockSupabase = {
       from: vi.fn(() => ({
         select: vi.fn().mockReturnThis(),

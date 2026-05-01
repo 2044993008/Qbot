@@ -40,15 +40,7 @@ export async function GET(request: NextRequest) {
       return user ? { ...user, remark: f.remark, friendship_created_at: f.created_at } : null;
     }).filter(Boolean);
 
-    // 按 friend_id 去重，保留最新的一条
-    const seen = new Set<number>();
-    const uniqueFriends = friendsWithDetails.filter((f) => {
-      if (!f || seen.has(f.id)) return false;
-      seen.add(f.id);
-      return true;
-    });
-
-    return NextResponse.json({ friends: uniqueFriends });
+    return NextResponse.json({ friends: friendsWithDetails });
   } catch (err) {
     console.error('获取好友列表错误:', err);
     return NextResponse.json({ error: '服务器错误' }, { status: 500 });

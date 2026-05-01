@@ -5,12 +5,12 @@ import { getSupabaseClient } from '@/storage/database/supabase-client';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 function createRequest(url: string) {
@@ -23,14 +23,14 @@ describe('Groups API Route', () => {
   });
 
   it('returns 401 when not authenticated', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
     const request = createRequest('http://localhost/api/groups');
     const response = await GET(request);
     expect(response.status).toBe(401);
   });
 
   it('returns groups list successfully', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const mockMemberships = [{ group_id: 1 }, { group_id: 2 }];
     const mockGroups = [
       { id: 1, name: 'Group A', avatar_color: '#ff0000', description: 'Desc A' },
@@ -69,7 +69,7 @@ describe('Groups API Route', () => {
   });
 
   it('returns empty array when user has no groups', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const mockSupabase = {
       from: vi.fn(() => ({
         select: vi.fn().mockReturnThis(),
@@ -86,7 +86,7 @@ describe('Groups API Route', () => {
   });
 
   it('returns 500 when database query fails', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const mockSupabase = {
       from: vi.fn(() => ({
         select: vi.fn().mockReturnThis(),

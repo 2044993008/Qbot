@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { getAuthUser } from '@/lib/auth-utils';
+import { getAuthUser, isGroupMember } from '@/lib/auth-utils';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -34,6 +34,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (error) throw new Error(`查询会话失败: ${error.message}`);
     if (!conversation) {
       return NextResponse.json({ error: '会话不存在' }, { status: 404 });
+    }
+
+    // 群聊需额外验证成员身份（防止用户退群后仍访问旧会话）
+    if (conversation.type === 'group') {
+      const isMember = await isGroupMember(conversation.target_id, payload.userId);
+      if (!isMember) {
+        return NextResponse.json({ error: '无权访问该会话' }, { status: 403 });
+      }
     }
 
     // 如果是群聊，获取群信息

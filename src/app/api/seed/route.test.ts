@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { POST } from './route';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
 // Mock seed module
@@ -12,10 +12,10 @@ vi.mock('@/server/db/seed', () => ({
   POST: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 import { POST as seedPost } from '@/server/db/seed';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedSeedPost = vi.mocked(seedPost);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
@@ -35,15 +35,15 @@ describe('Seed API Route', () => {
   });
 
   it('returns 401 when not authenticated', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
     const request = createRequest('POST', 'http://localhost/api/seed');
     const response = await POST(request);
     expect(response.status).toBe(401);
   });
 
   it('returns success when seed completes', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
-    mockedSeedPost.mockResolvedValue(new Response(JSON.stringify({ success: true, message: 'Seed completed' }), { status: 200 }));
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    mockedSeedPost.mockResolvedValue(NextResponse.json({ success: true as boolean, message: 'Seed completed' }, { status: 200 }) as any);
 
     const request = createRequest('POST', 'http://localhost/api/seed');
     const response = await POST(request);
@@ -53,8 +53,8 @@ describe('Seed API Route', () => {
   });
 
   it('returns 500 when seed fails', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
-    mockedSeedPost.mockResolvedValue(new Response(JSON.stringify({ success: false, error: 'Seed failed' }), { status: 500 }));
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    mockedSeedPost.mockResolvedValue(NextResponse.json({ success: false as boolean, error: 'Seed failed' }, { status: 500 }) as any);
 
     const request = createRequest('POST', 'http://localhost/api/seed');
     const response = await POST(request);

@@ -103,7 +103,7 @@ function getSupabaseServiceRoleKey(): string | undefined {
 }
 
 function shouldRewriteLocalRestUrl(url: string): boolean {
-  return /^https?:\/\/(127\.0\.0\.1|localhost):54321\/?$/.test(url);
+  return /^https?:\/\/(127\.0\.0\.1|localhost):5432[01]\/?$/.test(url);
 }
 
 function createLocalPostgrestFetch(baseFetch: FetchLike): FetchLike {

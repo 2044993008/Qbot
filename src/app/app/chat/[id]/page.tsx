@@ -187,7 +187,7 @@ export default function ChatPage({ params }: PageProps) {
   }
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="flex-1 flex flex-col">
       <ChatWindow
         type={targetInfo.type}
         targetId={targetInfo.id}

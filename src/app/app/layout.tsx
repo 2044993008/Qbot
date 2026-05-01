@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { Sidebar, MobileNav } from '@/components/sidebar';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, isReady } = useAuth();
@@ -31,5 +32,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  return <>{children}</>;
+  return (
+    <div className="h-screen flex overflow-hidden">
+      {/* 桌面端侧边栏 */}
+      <div className="w-72 border-r bg-white desktop-only">
+        <Sidebar />
+      </div>
+
+      {/* 主内容区域 */}
+      {children}
+
+      {/* 移动端底部导航 */}
+      <MobileNav />
+    </div>
+  );
 }

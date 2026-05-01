@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Sidebar, MobileNav } from '@/components/sidebar';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -170,14 +169,7 @@ export default function MomentsPage() {
   };
 
   return (
-    <div className="h-screen flex overflow-hidden">
-      {/* 侧边栏 */}
-      <div className="w-72 border-r bg-white desktop-only">
-        <Sidebar />
-      </div>
-
-      {/* 主内容 */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-[#f5f5f5]">
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#f5f5f5]">
         {/* 移动端顶部 */}
         <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b">
           <h1 className="text-lg font-semibold">QQ空间</h1>
@@ -486,8 +478,6 @@ export default function MomentsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 移动端底部导航 */}
-      <MobileNav />
     </div>
   );
 }

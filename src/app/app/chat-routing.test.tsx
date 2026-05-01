@@ -116,7 +116,7 @@ vi.mock('@/components/avatar', () => ({
   Avatar: ({ name }: { name: string }) => <div data-testid={`avatar-${name}`}>{name}</div>,
 }));
 
-// Mock Sidebar
+// Mock Sidebar (used by layout, not by AppPage directly)
 vi.mock('@/components/sidebar', () => ({
   Sidebar: () => <div data-testid="sidebar">Sidebar</div>,
   MobileNav: () => <div data-testid="mobile-nav">MobileNav</div>,
@@ -134,7 +134,6 @@ describe('Dual Chat Routing Architecture', () => {
     expect(screen.getByPlaceholderText('搜索')).toBeInTheDocument();
     expect(screen.getByText('聊天')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-window')).not.toBeInTheDocument();
-    expect(screen.getByTestId('sidebar')).toBeInTheDocument();
   });
 
   it('ChatList navigates to /app/chat/:conversationId when conversation is clicked', async () => {

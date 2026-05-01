@@ -6,12 +6,12 @@ import { generateCsrfToken } from '@/lib/csrf';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
@@ -32,14 +32,14 @@ describe('Tasks API Routes', () => {
 
   describe('GET /api/tasks', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('GET', 'http://localhost/api/tasks');
       const response = await GET(request);
       expect(response.status).toBe(401);
     });
 
     it('returns tasks list successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockTasks = [
         { id: 1, user_id: 1, name: 'Task 1', cron_expression: '0 9 * * *', task_type: 'reminder', enabled: true },
         { id: 2, user_id: 1, name: 'Task 2', cron_expression: '0 10 * * *', task_type: 'send_message', enabled: false },
@@ -61,7 +61,7 @@ describe('Tasks API Routes', () => {
     });
 
     it('returns empty array when no tasks', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSupabase = {
         from: vi.fn(() => ({
           select: vi.fn().mockReturnThis(),
@@ -79,7 +79,7 @@ describe('Tasks API Routes', () => {
     });
 
     it('returns 500 on database error', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSupabase = {
         from: vi.fn(() => ({
           select: vi.fn().mockReturnThis(),
@@ -97,7 +97,7 @@ describe('Tasks API Routes', () => {
 
   describe('POST /api/tasks', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('POST', 'http://localhost/api/tasks', {
         name: 'Test Task',
         cron_expression: '0 9 * * *',
@@ -108,7 +108,7 @@ describe('Tasks API Routes', () => {
     });
 
     it('returns 400 for invalid body', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('POST', 'http://localhost/api/tasks', {
         name: '',
         cron_expression: 'invalid',
@@ -119,7 +119,7 @@ describe('Tasks API Routes', () => {
     });
 
     it('returns 403 for invalid CSRF token', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('POST', 'http://localhost/api/tasks', {
         name: 'Test Task',
         cron_expression: '0 9 * * *',
@@ -130,7 +130,7 @@ describe('Tasks API Routes', () => {
     });
 
     it('returns 400 for invalid cron expression', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const request = createRequest('POST', 'http://localhost/api/tasks', {
         name: 'Test Task',
@@ -142,7 +142,7 @@ describe('Tasks API Routes', () => {
     });
 
     it('creates task successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockTask = {
         id: 1,
@@ -177,7 +177,7 @@ describe('Tasks API Routes', () => {
     });
 
     it('returns 500 when insert fails', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn(() => ({

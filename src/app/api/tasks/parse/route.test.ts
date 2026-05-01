@@ -4,12 +4,12 @@ import { POST } from './route';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
   return new NextRequest(url, {
@@ -35,28 +35,28 @@ describe('Tasks Parse API Route', () => {
   });
 
   it('returns 401 when not authenticated', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
     const request = createRequest('POST', 'http://localhost/api/tasks/parse', { text: '每天上午9点' });
     const response = await POST(request);
     expect(response.status).toBe(401);
   });
 
   it('returns 400 when text is missing', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const request = createRequest('POST', 'http://localhost/api/tasks/parse', {});
     const response = await POST(request);
     expect(response.status).toBe(400);
   });
 
   it('returns 400 when text is empty', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const request = createRequest('POST', 'http://localhost/api/tasks/parse', { text: '' });
     const response = await POST(request);
     expect(response.status).toBe(400);
   });
 
   it('parses natural language to cron successfully', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -74,7 +74,7 @@ describe('Tasks Parse API Route', () => {
   });
 
   it('returns 422 when LLM returns no cron', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -89,7 +89,7 @@ describe('Tasks Parse API Route', () => {
   });
 
   it('returns 500 when LLM API fails', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const fetchMock = vi.fn().mockRejectedValueOnce(new Error('Network error'));
     global.fetch = fetchMock;
 
@@ -99,7 +99,7 @@ describe('Tasks Parse API Route', () => {
   });
 
   it('handles non-JSON LLM response gracefully', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({

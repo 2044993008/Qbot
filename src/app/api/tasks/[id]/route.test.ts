@@ -6,12 +6,12 @@ import { generateCsrfToken } from '@/lib/csrf';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
@@ -32,21 +32,21 @@ describe('Task Detail API Routes', () => {
 
   describe('GET /api/tasks/[id]', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('GET', 'http://localhost/api/tasks/1');
       const response = await GET(request, { params: Promise.resolve({ id: '1' }) });
       expect(response.status).toBe(401);
     });
 
     it('returns 400 for invalid task ID', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('GET', 'http://localhost/api/tasks/invalid');
       const response = await GET(request, { params: Promise.resolve({ id: 'invalid' }) });
       expect(response.status).toBe(400);
     });
 
     it('returns 404 when task not found', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSupabase = {
         from: vi.fn(() => ({
           select: vi.fn().mockReturnThis(),
@@ -62,7 +62,7 @@ describe('Task Detail API Routes', () => {
     });
 
     it('returns 403 when user does not own the task', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSupabase = {
         from: vi.fn(() => ({
           select: vi.fn().mockReturnThis(),
@@ -78,7 +78,7 @@ describe('Task Detail API Routes', () => {
     });
 
     it('returns task successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockTask = { id: 1, user_id: 1, name: 'My Task', cron_expression: '0 9 * * *', task_type: 'reminder', enabled: true };
       const mockSupabase = {
         from: vi.fn(() => ({
@@ -100,28 +100,28 @@ describe('Task Detail API Routes', () => {
 
   describe('PUT /api/tasks/[id]', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('PUT', 'http://localhost/api/tasks/1', { name: 'Updated' });
       const response = await PUT(request, { params: Promise.resolve({ id: '1' }) });
       expect(response.status).toBe(401);
     });
 
     it('returns 400 for invalid task ID', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('PUT', 'http://localhost/api/tasks/invalid', { name: 'Updated' });
       const response = await PUT(request, { params: Promise.resolve({ id: 'invalid' }) });
       expect(response.status).toBe(400);
     });
 
     it('returns 403 for invalid CSRF token', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('PUT', 'http://localhost/api/tasks/1', { name: 'Updated' }, { 'X-CSRF-Token': 'invalid' });
       const response = await PUT(request, { params: Promise.resolve({ id: '1' }) });
       expect(response.status).toBe(403);
     });
 
     it('returns 404 when task not found', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn(() => ({
@@ -138,7 +138,7 @@ describe('Task Detail API Routes', () => {
     });
 
     it('returns 400 for invalid cron expression', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn(() => ({
@@ -155,7 +155,7 @@ describe('Task Detail API Routes', () => {
     });
 
     it('updates task successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockTask = { id: 1, user_id: 1, name: 'Updated Task', cron_expression: '0 10 * * *', task_type: 'reminder', enabled: true };
       const mockSupabase = {
@@ -188,28 +188,28 @@ describe('Task Detail API Routes', () => {
 
   describe('DELETE /api/tasks/[id]', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('DELETE', 'http://localhost/api/tasks/1');
       const response = await DELETE(request, { params: Promise.resolve({ id: '1' }) });
       expect(response.status).toBe(401);
     });
 
     it('returns 400 for invalid task ID', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('DELETE', 'http://localhost/api/tasks/invalid');
       const response = await DELETE(request, { params: Promise.resolve({ id: 'invalid' }) });
       expect(response.status).toBe(400);
     });
 
     it('returns 403 for invalid CSRF token', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('DELETE', 'http://localhost/api/tasks/1', undefined, { 'X-CSRF-Token': 'invalid' });
       const response = await DELETE(request, { params: Promise.resolve({ id: '1' }) });
       expect(response.status).toBe(403);
     });
 
     it('deletes task successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn((table: string) => {
@@ -237,7 +237,7 @@ describe('Task Detail API Routes', () => {
     });
 
     it('returns 500 when delete fails', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = {
         from: vi.fn(() => ({

@@ -6,12 +6,12 @@ import { generateCsrfToken } from '@/lib/csrf';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 function createRequest(method: string, url: string, body?: Record<string, unknown>, headers?: Record<string, string>) {
@@ -76,14 +76,14 @@ describe('Bot API Routes', () => {
 
   describe('GET /api/bot', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('GET', 'http://localhost/api/bot');
       const response = await GET(request);
       expect(response.status).toBe(401);
     });
 
     it('returns bot config successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockBotUser = { id: 99, qq_number: '99999', nickname: '小 Q 管家', avatar_color: '#ff0000', status: 'online', signature: '' };
       const mockSupabase = createMockSupabase();
       mockSupabase._chainable.maybeSingle = vi.fn()
@@ -101,7 +101,7 @@ describe('Bot API Routes', () => {
     });
 
     it('returns 500 when database errors', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSupabase = createMockSupabase();
       mockSupabase.from = vi.fn(() => {
         throw new Error('DB connection failed');
@@ -116,28 +116,28 @@ describe('Bot API Routes', () => {
 
   describe('POST /api/bot', () => {
     it('returns 401 when not authenticated', async () => {
-      mockedVerifyToken.mockResolvedValue(null);
+      mockedGetAuthUser.mockReturnValue(null);
       const request = createRequest('POST', 'http://localhost/api/bot', { message: 'hello' });
       const response = await POST(request);
       expect(response.status).toBe(401);
     });
 
     it('returns 400 for invalid body', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('POST', 'http://localhost/api/bot', { message: '' });
       const response = await POST(request);
       expect(response.status).toBe(400);
     });
 
     it('returns 403 for invalid CSRF token', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const request = createRequest('POST', 'http://localhost/api/bot', { message: 'hello' }, { 'X-CSRF-Token': 'invalid' });
       const response = await POST(request);
       expect(response.status).toBe(403);
     });
 
     it('processes bot message successfully', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = createMockSupabase();
 
@@ -170,7 +170,7 @@ describe('Bot API Routes', () => {
     });
 
     it('returns friendly response on LLM error', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const csrfToken = generateCsrfToken('1');
       const mockSupabase = createMockSupabase();
 
@@ -191,7 +191,7 @@ describe('Bot API Routes', () => {
     });
 
     it('executes tool directly when execute_tool is true', async () => {
-      mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+      mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
       const mockSupabase = createMockSupabase();
       mockSupabase._chainable.maybeSingle = vi.fn()
         .mockResolvedValueOnce({ data: { friend_id: 2 }, error: null })

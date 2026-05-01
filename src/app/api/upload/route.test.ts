@@ -6,12 +6,12 @@ import { generateCsrfToken } from '@/lib/csrf';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 describe('Upload API Route', () => {
@@ -21,7 +21,7 @@ describe('Upload API Route', () => {
   });
 
   it('returns 401 when not authenticated', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
     const request = new NextRequest('http://localhost/api/upload', {
       method: 'POST',
       body: new FormData(),
@@ -31,7 +31,7 @@ describe('Upload API Route', () => {
   });
 
   it('returns 403 for invalid CSRF token', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const formData = new FormData();
     const request = new NextRequest('http://localhost/api/upload', {
       method: 'POST',
@@ -43,7 +43,7 @@ describe('Upload API Route', () => {
   });
 
   it('returns 400 when no file is provided', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const csrfToken = generateCsrfToken('1');
     const formData = new FormData();
     const request = new NextRequest('http://localhost/api/upload', {
@@ -61,7 +61,7 @@ describe('Upload API Route', () => {
   });
 
   it('returns 400 for unsupported file type', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const csrfToken = generateCsrfToken('1');
     const formData = new FormData();
     formData.append('file', new File(['test'], 'test.pdf', { type: 'application/pdf' }));
@@ -79,7 +79,7 @@ describe('Upload API Route', () => {
   });
 
   it('returns 400 when file is too large', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const csrfToken = generateCsrfToken('1');
     const formData = new FormData();
     const largeFile = new File([new ArrayBuffer(6 * 1024 * 1024)], 'large.jpg', { type: 'image/jpeg' });
@@ -98,7 +98,7 @@ describe('Upload API Route', () => {
   });
 
   it('uploads file successfully to Supabase Storage', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const csrfToken = generateCsrfToken('1');
     const mockSupabase = {
       storage: {
@@ -129,8 +129,8 @@ describe('Upload API Route', () => {
     expect(json.filename).toBeDefined();
   });
 
-  it('returns fake URL when Supabase upload fails', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+  it('returns 500 when Supabase upload fails', async () => {
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
     const csrfToken = generateCsrfToken('1');
     const mockSupabase = {
       storage: {
@@ -154,9 +154,8 @@ describe('Upload API Route', () => {
       writable: true,
     });
     const response = await POST(request);
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(500);
     const json = await response.json();
-    expect(json.url).toContain('picsum.photos');
-    expect(json.message).toContain('演示模式');
+    expect(json.error).toBe('图片上传失败，请重试');
   });
 });

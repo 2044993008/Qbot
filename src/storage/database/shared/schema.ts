@@ -34,6 +34,7 @@ export const friends = pgTable(
   (table) => [
     index("friends_user_id_idx").on(table.user_id),
     index("friends_friend_id_idx").on(table.friend_id),
+    uniqueIndex("friends_user_friend_unique_idx").on(table.user_id, table.friend_id),
   ]
 );
 
@@ -116,12 +117,14 @@ export const moments = pgTable(
     user_id: integer("user_id").notNull().references(() => users.id),
     content: text("content").notNull(),
     images: jsonb("images").default([]), // 图片URL数组
+    visibility: varchar("visibility", { length: 20 }).default("public").notNull(), // public, friends, private
     like_count: integer("like_count").default(0),
     comment_count: integer("comment_count").default(0),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("moments_user_id_idx").on(table.user_id),
+    index("moments_visibility_idx").on(table.visibility),
     index("moments_created_at_idx").on(table.created_at),
   ]
 );

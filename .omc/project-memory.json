@@ -1,0 +1,330 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1777562317193,
+  "projectRoot": "E:\\Agent_Projects\\projects",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "next",
+        "version": "16.1.1",
+        "category": "fullstack"
+      },
+      {
+        "name": "react",
+        "version": "19.2.3",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.2.3",
+        "category": "frontend"
+      },
+      {
+        "name": "@playwright/test",
+        "version": "1.59.1",
+        "category": "testing"
+      },
+      {
+        "name": "playwright",
+        "version": "1.59.1",
+        "category": "testing"
+      },
+      {
+        "name": "vitest",
+        "version": "4.1.5",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "pnpm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "pnpm build",
+    "testCommand": "pnpm test",
+    "lintCommand": "pnpm lint",
+    "devCommand": "pnpm dev",
+    "scripts": {
+      "build": "tsx scripts/run.ts build",
+      "db:up": "docker compose -f docker-compose.local-db.yml up -d",
+      "db:down": "docker compose -f docker-compose.local-db.yml down",
+      "db:init": "docker compose -f docker-compose.local-db.yml exec -T postgres psql -U postgres -d app -f /workspace/scripts/init-local-db.sql",
+      "db:migrate:20260428": "docker compose -f docker-compose.local-db.yml exec -T postgres psql -U postgres -d app -f /workspace/scripts/migrations/20260428_add_unique_indexes.sql",
+      "db:seed": "tsx scripts/seed-local-db.ts",
+      "dev": "tsx scripts/run.ts dev",
+      "preinstall": "npx only-allow pnpm",
+      "lint": "eslint",
+      "start": "tsx scripts/run.ts start",
+      "ts-check": "tsc -p tsconfig.json",
+      "test": "vitest run",
+      "test:watch": "vitest",
+      "test:ui": "vitest --ui",
+      "test:coverage": "vitest run --coverage",
+      "test:e2e": "playwright test",
+      "test:all": "vitest run && playwright test"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": "type-based"
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "assets",
+      "docs",
+      "public",
+      "scripts",
+      "src"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "assets": {
+      "path": "assets",
+      "purpose": "Static assets",
+      "fileCount": 1,
+      "lastAccessed": 1777562317131,
+      "keyFiles": [
+        "image.png"
+      ]
+    },
+    "coverage": {
+      "path": "coverage",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1777562317132,
+      "keyFiles": [
+        "base.css",
+        "block-navigation.js",
+        "coverage-final.json",
+        "favicon.png",
+        "index.html"
+      ]
+    },
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 1,
+      "lastAccessed": 1777562317166,
+      "keyFiles": [
+        "server.js"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1777562317167,
+      "keyFiles": [
+        "qa-regression-checklist.md"
+      ]
+    },
+    "e2e": {
+      "path": "e2e",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1777562317167,
+      "keyFiles": [
+        "auth.setup.ts",
+        "auth.spec.ts",
+        "bot.spec.ts",
+        "chat.spec.ts",
+        "features.spec.ts"
+      ]
+    },
+    "e2e_screenshots": {
+      "path": "e2e_screenshots",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777562317167,
+      "keyFiles": []
+    },
+    "playwright": {
+      "path": "playwright",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777562317167,
+      "keyFiles": []
+    },
+    "playwright-report": {
+      "path": "playwright-report",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1777562317168,
+      "keyFiles": [
+        "index.html"
+      ]
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 5,
+      "lastAccessed": 1777562317168,
+      "keyFiles": [
+        "file.svg",
+        "globe.svg",
+        "next.svg",
+        "vercel.svg",
+        "window.svg"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 13,
+      "lastAccessed": 1777562317168,
+      "keyFiles": [
+        "build.sh",
+        "dev.sh",
+        "e2e-complex-api.js",
+        "e2e-complex-command.js",
+        "e2e-debug.js"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 1,
+      "lastAccessed": 1777562317169,
+      "keyFiles": [
+        "server.ts"
+      ]
+    },
+    "test-results": {
+      "path": "test-results",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1777562317169,
+      "keyFiles": []
+    },
+    "coverage\\app": {
+      "path": "coverage\\app",
+      "purpose": "Application code",
+      "fileCount": 0,
+      "lastAccessed": 1777562317170,
+      "keyFiles": []
+    },
+    "coverage\\components": {
+      "path": "coverage\\components",
+      "purpose": "UI components",
+      "fileCount": 6,
+      "lastAccessed": 1777562317170,
+      "keyFiles": [
+        "avatar.tsx.html",
+        "chat-list.tsx.html",
+        "chat-window.tsx.html"
+      ]
+    },
+    "coverage\\lib": {
+      "path": "coverage\\lib",
+      "purpose": "Library code",
+      "fileCount": 9,
+      "lastAccessed": 1777562317171,
+      "keyFiles": [
+        "auth-utils.ts.html",
+        "csrf.ts.html",
+        "hooks.ts.html"
+      ]
+    },
+    "playwright-report\\data": {
+      "path": "playwright-report\\data",
+      "purpose": "Data files",
+      "fileCount": 9,
+      "lastAccessed": 1777562317172,
+      "keyFiles": [
+        "33fa9645b0a50932ed32f5c1abb05759b840fda8.webm",
+        "4713c2fc4b847c444b990d0173244339cbe5ddcc.png",
+        "8327f0d05d915a43a2308e207b179f691e3ec769.md"
+      ]
+    },
+    "scripts\\migrations": {
+      "path": "scripts\\migrations",
+      "purpose": "Database migrations",
+      "fileCount": 2,
+      "lastAccessed": 1777562317173,
+      "keyFiles": [
+        "20260428_add_unique_indexes.sql",
+        "20260429_add_scheduled_tasks.sql"
+      ]
+    },
+    "src\\app": {
+      "path": "src\\app",
+      "purpose": "Application code",
+      "fileCount": 5,
+      "lastAccessed": 1777562317173,
+      "keyFiles": [
+        "favicon.ico",
+        "globals.css",
+        "layout.tsx"
+      ]
+    },
+    "src\\components": {
+      "path": "src\\components",
+      "purpose": "UI components",
+      "fileCount": 11,
+      "lastAccessed": 1777562317173,
+      "keyFiles": [
+        "avatar.test.tsx",
+        "avatar.tsx",
+        "chat-list.test.tsx"
+      ]
+    },
+    "src\\lib": {
+      "path": "src\\lib",
+      "purpose": "Library code",
+      "fileCount": 19,
+      "lastAccessed": 1777562317174,
+      "keyFiles": [
+        "api.ts",
+        "auth-context.tsx",
+        "auth-utils.test.ts"
+      ]
+    },
+    "src\\services": {
+      "path": "src\\services",
+      "purpose": "Business logic services",
+      "fileCount": 1,
+      "lastAccessed": 1777562317174,
+      "keyFiles": [
+        "scheduler.ts"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src\\app\\api\\auth\\login\\route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1777562575642,
+      "type": "file"
+    },
+    {
+      "path": "src",
+      "accessCount": 1,
+      "lastAccessed": 1777562575715,
+      "type": "directory"
+    }
+  ],
+  "userDirectives": []
+}

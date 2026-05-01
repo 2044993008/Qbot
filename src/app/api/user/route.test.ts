@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET as userGET, PUT as userPUT } from './route';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
 vi.mock('@/lib/csrf', () => ({
@@ -14,13 +14,13 @@ vi.mock('@/lib/csrf', () => ({
   verifyCsrfToken: () => true,
 }));
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 describe('GET /api/user', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedVerifyToken.mockReset();
+    mockedGetAuthUser.mockReset();
   });
 
   it('returns 200 with current user info', async () => {
@@ -35,7 +35,7 @@ describe('GET /api/user', () => {
       created_at: new Date().toISOString(),
     };
 
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({
@@ -61,7 +61,7 @@ describe('GET /api/user', () => {
   });
 
   it('returns 401 without token', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
 
     const request = new NextRequest('http://localhost/api/user');
 
@@ -73,7 +73,7 @@ describe('GET /api/user', () => {
   });
 
   it('returns 401 with invalid token', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
 
     const request = new NextRequest('http://localhost/api/user', {
       headers: { Authorization: 'Bearer invalid-token' },
@@ -87,7 +87,7 @@ describe('GET /api/user', () => {
   });
 
   it('returns 404 when user not found', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({
@@ -112,7 +112,7 @@ describe('GET /api/user', () => {
   });
 
   it('returns 500 on database error', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({
@@ -140,7 +140,7 @@ describe('GET /api/user', () => {
 describe('PUT /api/user', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedVerifyToken.mockReset();
+    mockedGetAuthUser.mockReset();
   });
 
   it('returns 200 on successful update', async () => {
@@ -153,7 +153,7 @@ describe('PUT /api/user', () => {
       status: 'online',
     };
 
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({
@@ -183,7 +183,7 @@ describe('PUT /api/user', () => {
   });
 
   it('returns 401 without token', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
 
     const request = new NextRequest('http://localhost/api/user', {
       method: 'PUT',
@@ -198,7 +198,7 @@ describe('PUT /api/user', () => {
   });
 
   it('returns 400 on invalid input', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const request = new NextRequest('http://localhost/api/user', {
       method: 'PUT',
@@ -214,7 +214,7 @@ describe('PUT /api/user', () => {
   });
 
   it('returns 400 when no fields to update', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const request = new NextRequest('http://localhost/api/user', {
       method: 'PUT',
@@ -230,7 +230,7 @@ describe('PUT /api/user', () => {
   });
 
   it('returns 500 on database error', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({

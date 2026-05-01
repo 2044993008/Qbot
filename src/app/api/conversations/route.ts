@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUser } from '@/lib/auth-utils';
+import { getAuthUser, isGroupMember, isFriend } from '@/lib/auth-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { validateBody, createConversationSchema } from '@/lib/validation';
 import { extractCsrfToken, verifyCsrfToken } from '@/lib/csrf';
@@ -102,8 +102,31 @@ export async function POST(request: NextRequest) {
 
     const { type, target_id } = validated.data;
 
+    // 验证目标是否为用户的好友、群成员或机器人
+    if (type === 'private') {
+      const friendOk = await isFriend(payload.userId, target_id);
+      if (!friendOk) {
+        // 允许与机器人创建会话（机器人昵称固定为"小 Q 管家"）
+        const client = getSupabaseClient();
+        const { data: botUser } = await client
+          .from('users')
+          .select('id')
+          .eq('nickname', '小 Q 管家')
+          .eq('id', target_id)
+          .maybeSingle();
+        if (!botUser) {
+          return NextResponse.json({ error: '对方不是您的好友' }, { status: 403 });
+        }
+      }
+    } else if (type === 'group') {
+      const memberOk = await isGroupMember(target_id, payload.userId);
+      if (!memberOk) {
+        return NextResponse.json({ error: '您不是该群成员' }, { status: 403 });
+      }
+    }
+
     const client = getSupabaseClient();
-    
+
     // 检查会话是否已存在
     const { data: existing } = await client
       .from('conversations')

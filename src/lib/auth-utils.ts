@@ -109,3 +109,19 @@ export async function isGroupMember(groupId: number, userId: number): Promise<bo
 
   return !!data;
 }
+
+export async function isFriend(userId: number, friendId: number): Promise<boolean> {
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from('friends')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('friend_id', friendId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`验证好友关系失败: ${error.message}`);
+  }
+
+  return !!data;
+}

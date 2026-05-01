@@ -2,20 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET as friendsGET } from './route';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser } from '@/lib/auth-utils';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 describe('GET /api/friends', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedVerifyToken.mockReset();
+    mockedGetAuthUser.mockReset();
   });
 
   it('returns 200 with friends list', async () => {
@@ -29,7 +29,7 @@ describe('GET /api/friends', () => {
       { id: 3, qq_number: '10003', nickname: 'UserB', avatar_color: '#ef4444', signature: 'Hey', status: 'offline', last_seen: '2024-01-02' },
     ];
 
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     let callCount = 0;
     const mockSupabase = {
@@ -66,7 +66,7 @@ describe('GET /api/friends', () => {
   });
 
   it('returns 200 with empty friends list', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({
@@ -89,7 +89,7 @@ describe('GET /api/friends', () => {
   });
 
   it('returns 401 without token', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
 
     const request = new NextRequest('http://localhost/api/friends');
 
@@ -101,7 +101,7 @@ describe('GET /api/friends', () => {
   });
 
   it('returns 401 with invalid token', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
 
     const request = new NextRequest('http://localhost/api/friends', {
       headers: { Authorization: 'Bearer invalid-token' },
@@ -115,7 +115,7 @@ describe('GET /api/friends', () => {
   });
 
   it('returns 500 on database error', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({

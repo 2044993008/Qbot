@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET as conversationsGET, POST as conversationsPOST } from './route';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { verifyToken } from '@/lib/auth-utils';
+import { getAuthUser, isFriend, isGroupMember } from '@/lib/auth-utils';
 
 // Mock auth-utils
 vi.mock('@/lib/auth-utils', () => ({
-  verifyToken: vi.fn(),
+  getAuthUser: vi.fn(),
+  isFriend: vi.fn().mockResolvedValue(true),
+  isGroupMember: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('@/lib/csrf', () => ({
@@ -14,13 +16,15 @@ vi.mock('@/lib/csrf', () => ({
   verifyCsrfToken: () => true,
 }));
 
-const mockedVerifyToken = vi.mocked(verifyToken);
+const mockedGetAuthUser = vi.mocked(getAuthUser);
+const mockedIsFriend = vi.mocked(isFriend);
+const mockedIsGroupMember = vi.mocked(isGroupMember);
 const mockedGetSupabaseClient = vi.mocked(getSupabaseClient);
 
 describe('GET /api/conversations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedVerifyToken.mockReset();
+    mockedGetAuthUser.mockReset();
   });
 
   it('returns 200 with conversations list', async () => {
@@ -37,7 +41,7 @@ describe('GET /api/conversations', () => {
       { id: 10, name: 'GroupA', avatar_color: '#ef4444' },
     ];
 
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     let callCount = 0;
     const mockSupabase = {
@@ -84,7 +88,7 @@ describe('GET /api/conversations', () => {
   });
 
   it('returns 200 with empty conversations list', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({
@@ -109,7 +113,7 @@ describe('GET /api/conversations', () => {
   });
 
   it('returns 401 without token', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
 
     const request = new NextRequest('http://localhost/api/conversations');
 
@@ -121,7 +125,7 @@ describe('GET /api/conversations', () => {
   });
 
   it('returns 401 with invalid token', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
 
     const request = new NextRequest('http://localhost/api/conversations', {
       headers: { Authorization: 'Bearer invalid-token' },
@@ -135,7 +139,7 @@ describe('GET /api/conversations', () => {
   });
 
   it('returns 500 on database error', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({
@@ -163,13 +167,15 @@ describe('GET /api/conversations', () => {
 describe('POST /api/conversations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedVerifyToken.mockReset();
+    mockedGetAuthUser.mockReset();
+    mockedIsFriend.mockResolvedValue(true);
+    mockedIsGroupMember.mockResolvedValue(true);
   });
 
   it('returns 200 with existing conversation', async () => {
     const existingConv = { id: 1, user_id: 1, type: 'private', target_id: 2, last_message: '', unread_count: 0 };
 
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const mockSupabase = {
       from: vi.fn(() => ({
@@ -203,7 +209,7 @@ describe('POST /api/conversations', () => {
   it('returns 200 when creating new conversation', async () => {
     const newConv = { id: 2, user_id: 1, type: 'private', target_id: 3, last_message: '', unread_count: 0 };
 
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     let callCount = 0;
     const mockSupabase = {
@@ -251,7 +257,7 @@ describe('POST /api/conversations', () => {
   });
 
   it('returns 401 without token', async () => {
-    mockedVerifyToken.mockResolvedValue(null);
+    mockedGetAuthUser.mockReturnValue(null);
 
     const request = new NextRequest('http://localhost/api/conversations', {
       method: 'POST',
@@ -266,7 +272,7 @@ describe('POST /api/conversations', () => {
   });
 
   it('returns 400 on invalid input', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     const request = new NextRequest('http://localhost/api/conversations', {
       method: 'POST',
@@ -282,7 +288,7 @@ describe('POST /api/conversations', () => {
   });
 
   it('returns 500 on database error', async () => {
-    mockedVerifyToken.mockResolvedValue({ userId: 1, qqNumber: '10001' });
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
 
     let callCount = 0;
     const mockSupabase = {
@@ -326,5 +332,57 @@ describe('POST /api/conversations', () => {
 
     expect(response.status).toBe(500);
     expect(data.error).toContain('服务器错误');
+  });
+
+  it('returns 403 when target is not a friend', async () => {
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    mockedIsFriend.mockResolvedValue(false);
+
+    const mockSupabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'users') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
+                })),
+              })),
+            })),
+          };
+        }
+        return {};
+      }),
+    };
+    mockedGetSupabaseClient.mockReturnValue(mockSupabase as unknown as ReturnType<typeof getSupabaseClient>);
+
+    const request = new NextRequest('http://localhost/api/conversations', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer valid-token', 'X-CSRF-Token': 'valid-csrf-token' },
+      body: JSON.stringify({ type: 'private', target_id: 999 }),
+    });
+
+    const response = await conversationsPOST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(data.error).toContain('对方不是您的好友');
+  });
+
+  it('returns 403 when target group is not joined', async () => {
+    mockedGetAuthUser.mockReturnValue({ userId: 1, qqNumber: '10001' });
+    mockedIsGroupMember.mockResolvedValue(false);
+
+    const request = new NextRequest('http://localhost/api/conversations', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer valid-token', 'X-CSRF-Token': 'valid-csrf-token' },
+      body: JSON.stringify({ type: 'group', target_id: 99 }),
+    });
+
+    const response = await conversationsPOST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(data.error).toContain('您不是该群成员');
   });
 });

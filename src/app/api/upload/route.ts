@@ -44,9 +44,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '图片大小不能超过 5MB' }, { status: 400 });
     }
 
-    // 生成文件名
+    // 生成唯一文件名
     const ext = file.name.split('.').pop() || 'jpg';
-    const filename = `${payload.userId}_${Date.now()}.${ext}`;
+    const filename = `${payload.userId}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
 
     // 转换为 ArrayBuffer
     const buffer = await file.arrayBuffer();
@@ -62,14 +62,8 @@ export async function POST(request: NextRequest) {
       });
 
     if (uploadError) {
-      // 如果 Storage 上传失败，返回一个占位图片 URL
-      // 在实际环境中应该有对象存储服务
-      const fakeUrl = `https://picsum.photos/400/300?random=${Date.now()}`;
-      return NextResponse.json({ 
-        url: fakeUrl,
-        filename,
-        message: '图片上传成功（演示模式）'
-      });
+      console.error('Supabase 上传失败:', uploadError.message);
+      return NextResponse.json({ error: '图片上传失败，请重试' }, { status: 500 });
     }
 
     // 获取公开 URL
