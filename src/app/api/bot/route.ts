@@ -54,8 +54,8 @@ const userRequestLocks = new Map<number, UserRequestLock>();
 export async function acquireUserLock<T>(userId: number, fn: () => Promise<T>): Promise<T> {
   while (userRequestLocks.has(userId)) {
     const lock = userRequestLocks.get(userId)!;
-    // 如果锁超过60秒，认为是死锁，强制释放
-    if (Date.now() - lock.timestamp > 60000) {
+    // 如果锁超过120秒，认为是死锁，强制释放（与复杂请求超时匹配）
+    if (Date.now() - lock.timestamp > 120000) {
       userRequestLocks.delete(userId);
       break;
     }
@@ -2131,7 +2131,7 @@ async function runPlanExecuteAgent(
   return result;
 }
 
-async function runReActAgentWithTimeout(client: SupabaseClient, userId: number, userMessage: string, timeoutMs = 40000): Promise<{ content: string; toolCalls?: unknown[] }> {
+async function runReActAgentWithTimeout(client: SupabaseClient, userId: number, userMessage: string, timeoutMs = 90000): Promise<{ content: string; toolCalls?: unknown[] }> {
   // 检测是否为复杂请求，如果是则使用 Plan-Execute-Observe 模式
   if (detectComplexRequest(userMessage)) {
     return Promise.race([

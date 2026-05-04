@@ -262,6 +262,11 @@ test('AI Butler - Single page continuous complex command chain', async ({ page }
     console.log(`Matched keywords: ${matchedKeywords.join(', ') || '(none)'}`);
     console.log(`Duration: ${durationMs}ms`);
 
+    // 指令间间隔：确保前一个请求的 SSE 流完全关闭，减少并发压力
+    if (i < COMMANDS.length - 1) {
+      await page.waitForTimeout(3000);
+    }
+
     results.push({
       id: cmd.id,
       command: cmd.command,
