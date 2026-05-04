@@ -37,6 +37,16 @@ async function openBotChat(page: Page) {
 }
 
 async function sendMessage(page: Page, message: string): Promise<number> {
+  // 1. 确保上一条 SSE 流已完全结束：等待 typing indicator 消失
+  const typingIndicator = page.locator('.message-bubble-received:has(.animate-bounce)');
+  try {
+    await expect(typingIndicator).toBeHidden({ timeout: 30000 });
+  } catch {
+    // 没有 typing indicator，继续
+  }
+  // 再多等 2 秒，确保最后一条消息 DOM 完全稳定
+  await page.waitForTimeout(2000);
+
   const input = page.locator('textarea[placeholder*="输入消息"]');
   await expect(input).toBeVisible();
   await input.fill(message);
@@ -261,11 +271,6 @@ test('AI Butler - Single page continuous complex command chain', async ({ page }
     console.log(`Response: ${response.substring(0, 150)}...`);
     console.log(`Matched keywords: ${matchedKeywords.join(', ') || '(none)'}`);
     console.log(`Duration: ${durationMs}ms`);
-
-    // 指令间间隔：确保前一个请求的 SSE 流完全关闭，减少并发压力
-    if (i < COMMANDS.length - 1) {
-      await page.waitForTimeout(3000);
-    }
 
     results.push({
       id: cmd.id,

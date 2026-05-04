@@ -2070,6 +2070,44 @@ function summarizeToolResult(toolName: string, result: unknown): string {
   return JSON.stringify(result);
 }
 
+// 替换参数中的模板变量为实际值
+// 支持格式：{{step2.text}}, {{step_2_result}}, {{step2.result}}, [上一步生成的文案] 等
+function resolveTemplateParams(
+  params: Record<string, unknown>,
+  context: Record<string, string>,
+  lastStepResult?: string
+): Record<string, unknown> {
+  const resolved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === 'string') {
+      let newValue = value;
+      // 1. 匹配 {{step2.text}}, {{step_2_result}}, {{step2.result}} 等
+      newValue = newValue.replace(/\{\{step[_-]?(\d+)[._-]?(\w+)\}\}/gi, (_match, stepNum, field) => {
+        const varKey = `step${stepNum}.${field.toLowerCase()}`;
+        return context[varKey] ?? _match;
+      });
+      // 2. 匹配 {{step2}} 简写形式
+      newValue = newValue.replace(/\{\{step[_-]?(\d+)\}\}/gi, (_match, stepNum) => {
+        const varKey = `step${stepNum}.result`;
+        return context[varKey] ?? _match;
+      });
+      // 3. 中文占位符：如果包含"上一步"、"前一步"、"step"、"结果"、"文案"等描述性词语
+      // 且看起来像占位符（用方括号包裹或包含"生成的"、"结果"），则用 lastStepResult 替换
+      if (/\[.*(?:上一步|前一步|生成的|结果|文案|内容|step).*\]/i.test(newValue)) {
+        newValue = lastStepResult ?? newValue;
+      }
+      // 4. 如果值本身就是模板变量格式且未被替换，则尝试用 lastStepResult
+      if (newValue.startsWith('{{') && newValue.endsWith('}}') && lastStepResult) {
+        newValue = lastStepResult;
+      }
+      resolved[key] = newValue;
+    } else {
+      resolved[key] = value;
+    }
+  }
+  return resolved;
+}
+
 // Executor：执行计划步骤
 async function executePlan(
   client: SupabaseClient,
@@ -2079,15 +2117,30 @@ async function executePlan(
 ): Promise<{ content: string; toolCalls?: unknown[] }> {
   const stepResults: string[] = [];
   const allToolCalls: unknown[] = [];
+  // 用于模板变量替换的上下文，key 为 "step1.text", "step2.result" 等
+  const context: Record<string, string> = {};
 
-  for (const step of plan.steps) {
+  for (let i = 0; i < plan.steps.length; i++) {
+    const step = plan.steps[i];
     if (step.tool) {
-      // 执行工具调用
       try {
-        const result = await executeTool(client, userId, step.tool, step.params || {});
+        // 替换 params 中的模板变量，传入上一步结果用于中文占位符
+        const lastStepResult = stepResults.length > 0 ? stepResults[stepResults.length - 1].replace(/^.*?:\s*/, '') : undefined;
+        const resolvedParams = resolveTemplateParams(step.params || {}, context, lastStepResult);
+        const result = await executeTool(client, userId, step.tool, resolvedParams);
         const summary = summarizeToolResult(step.tool, result);
         stepResults.push(`${step.action}: ${summary}`);
-        allToolCalls.push({ name: step.tool, arguments: step.params, result });
+        allToolCalls.push({ name: step.tool, arguments: resolvedParams, result });
+        // 将当前步骤结果存入上下文，供后续步骤引用
+        const stepNum = i + 1;
+        context[`step${stepNum}.text`] = summary;
+        context[`step${stepNum}.result`] = summary;
+        if (typeof result === 'object' && result !== null) {
+          const r = result as Record<string, unknown>;
+          if (typeof r.message === 'string') context[`step${stepNum}.message`] = r.message;
+          if (typeof r.content === 'string') context[`step${stepNum}.content`] = r.content;
+          if (typeof r.result === 'string') context[`step${stepNum}.result`] = r.result;
+        }
       } catch (error) {
         stepResults.push(`${step.action}: 失败 - ${error instanceof Error ? error.message : String(error)}`);
       }

@@ -17,6 +17,10 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!token) {
+    // 页面请求 → 重定向到登录页；API 请求 → 返回 401 JSON
+    if (!request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
     return NextResponse.json(
       { error: '未登录', code: 'UNAUTHORIZED' },
       { status: 401 }
@@ -26,6 +30,9 @@ export async function middleware(request: NextRequest) {
   const payload = await verifyTokenString(token);
 
   if (!payload) {
+    if (!request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
     return NextResponse.json(
       { error: '未登录', code: 'UNAUTHORIZED' },
       { status: 401 }
@@ -44,9 +51,11 @@ export async function middleware(request: NextRequest) {
   });
 }
 
-// 匹配所有 API 路由，但排除登录/注册/登出
+// 匹配所有 API 路由（排除登录/注册/登出）以及所有 app 页面路由
 export const config = {
   matcher: [
     '/api/((?!auth/login|auth/register|auth/logout).*)',
+    '/app/:path*',
+    '/((?!login|api|_next|favicon.ico|.*\\.).*)', // 根路径和其他受保护页面
   ],
 };
