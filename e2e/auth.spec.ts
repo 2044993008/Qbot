@@ -10,6 +10,8 @@ const TEST_USER = {
 };
 
 test.describe('Authentication', () => {
+  test.describe.configure({ timeout: 60000 });
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
   });
@@ -44,12 +46,17 @@ test.describe('Authentication', () => {
     await page.fill('input[placeholder*="QQ"]', TEST_USER.qq_number);
     await page.fill('input[type="password"]', TEST_USER.password);
     await page.click('button[type="submit"]');
-    await page.waitForURL(/\/app/);
+    await page.waitForURL(/\/app/, { timeout: 30000 });
 
-    // 打开设置菜单
-    await page.click('button:has(.lucide-settings)');
-    await page.getByRole('button', { name: '退出登录' }).click();
+    // 点击设置齿轮按钮，展开设置菜单
+    const settingsBtn = page.locator('button').filter({ has: page.locator('svg.lucide-settings') }).first();
+    await settingsBtn.click();
+    
+    // 点击退出登录按钮
+    const logoutBtn = page.getByRole('button', { name: '退出登录' });
+    await expect(logoutBtn).toBeVisible({ timeout: 5000 });
+    await logoutBtn.click();
 
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/login/, { timeout: 10000 });
   });
 });

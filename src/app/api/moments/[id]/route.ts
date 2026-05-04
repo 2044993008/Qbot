@@ -28,7 +28,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'CSRF 验证失败' }, { status: 403 });
     }
 
-    const { content, images, visibility } = await request.json();
+    const { content, images } = await request.json();
 
     const client = getSupabaseClient();
 
@@ -53,18 +53,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // 更新动态
-    // 注意: 如果数据库中还没有 updated_at 列，请先通过迁移添加该列
     const updateData: Record<string, unknown> = {};
     if (content !== undefined) updateData.content = content;
     if (images !== undefined) updateData.images = images;
-    if (visibility !== undefined) updateData.visibility = visibility;
-    updateData.updated_at = new Date().toISOString();
 
     const { data: updatedMoment, error: updateError } = await client
       .from('moments')
       .update(updateData)
       .eq('id', momentId)
-      .select('id, user_id, content, images, visibility, like_count, comment_count, created_at')
+      .select('id, user_id, content, images, like_count, comment_count, created_at')
       .single();
 
     if (updateError) {

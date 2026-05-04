@@ -68,34 +68,37 @@ export async function GET(request: NextRequest) {
     }
     
     // 构建查询
+    // 默认返回最新的 limit 条消息（DESC），前端按升序渲染
     let query = client
       .from('messages')
       .select('id, conversation_id, sender_id, type, content, metadata, created_at')
-      .eq('conversation_id', conversation_id)
-      .order('created_at', { ascending: true });
+      .eq('conversation_id', conversation_id);
 
-    // 如果有 before 参数，加载该消息之前的消息
+    // 如果有 before 参数，加载该消息之前的历史消息（向上滚动）
     if (before) {
       const { data: beforeMsg } = await client
         .from('messages')
         .select('created_at')
         .eq('id', before)
         .single();
-      
+
       if (beforeMsg) {
         query = query.lt('created_at', beforeMsg.created_at);
       }
-      // 按最新在前排序，返回后反转
+      // 按最新在前排序，取 limit 条，返回后反转为升序
+      query = query.order('created_at', { ascending: false });
+    } else {
+      // 默认：返回最新的 limit 条消息（DESC），返回后反转为升序供前端渲染
       query = query.order('created_at', { ascending: false });
     }
-    
+
     // 应用分页
     const { data: messages, error } = await query.range(offset, offset + limit - 1);
 
     if (error) throw new Error(`查询消息失败: ${error.message}`);
 
-    // 如果是加载历史消息，需要反转顺序
-    const sortedMessages: MessageRow[] = before ? (messages || []).reverse() : messages || [];
+    // 统一反转为升序（前端按时间顺序渲染）
+    const sortedMessages: MessageRow[] = (messages || []).reverse();
 
     // 获取发送者信息
     if (sortedMessages.length > 0) {

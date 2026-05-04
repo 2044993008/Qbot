@@ -68,7 +68,17 @@ export const TextMessageRenderer: MessageRenderer = ({ msg, isMine }) => {
 export const ImageMessageRenderer: MessageRenderer = ({ msg }) => {
   return (
     <div className="message-bubble message-bubble-received">
-      <img src={msg.content} alt="图片" className="max-w-full rounded-lg" />
+      <img 
+        src={msg.content} 
+        alt="图片" 
+        className="max-w-full rounded-lg" 
+        onError={(e) => {
+          // 图片加载失败时显示占位符
+          const target = e.target as HTMLImageElement;
+          target.onerror = null;
+          target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgZmlsbD0iI2YzZjRmNiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5Y2EzYWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj7lm77niYfliqDovb3lm77niYc8L3RleHQ+PC9zdmc+';
+        }}
+      />
     </div>
   );
 };
@@ -223,15 +233,17 @@ export const PreviewMessageRenderer: MessageRenderer = ({
         <Button
           size="sm"
           onClick={() => onConfirmAction?.(msg)}
-          className="bg-[#12b7f5] hover:bg-[#0aa8e8] text-white font-medium px-4"
+          disabled={!!msg.metadata?.isExecuting}
+          className="bg-[#12b7f5] hover:bg-[#0aa8e8] text-white font-medium px-4 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {actions.length > 1 ? '全部确认执行' : '确认执行'}
+          {msg.metadata?.isExecuting ? '执行中...' : (actions.length > 1 ? '全部确认执行' : '确认执行')}
         </Button>
         <Button
           size="sm"
           variant="outline"
           onClick={() => onCancelAction?.(msg)}
-          className="border-gray-300 text-gray-600 hover:bg-gray-100"
+          disabled={!!msg.metadata?.isExecuting}
+          className="border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           取消
         </Button>

@@ -21,43 +21,14 @@ export async function GET(request: NextRequest) {
 
     const client = getSupabaseClient();
 
-    // 获取当前用户的好友列表
-    const { data: friendRelations } = await client
-      .from('friends')
-      .select('friend_id')
-      .eq('user_id', payload.userId);
-
-    const friendIds = new Set((friendRelations || []).map(f => f.friend_id));
-
     // 构建查询
     let query = client
       .from('moments')
-      .select('id, user_id, content, images, visibility, like_count, comment_count, created_at')
+      .select('id, user_id, content, images, like_count, comment_count, created_at')
       .order('created_at', { ascending: false });
 
     if (user_id) {
-      // 查看指定用户的动态：只能看到该用户的公开动态，以及若互为好友则可见好友级别动态，仅自己可见私密动态
-      const targetUserId = parseInt(user_id);
-      query = query.eq('user_id', targetUserId);
-
-      const visibilityConditions: string[] = ['visibility.eq.public'];
-      if (targetUserId === payload.userId || friendIds.has(targetUserId)) {
-        visibilityConditions.push('visibility.eq.friends');
-      }
-      if (targetUserId === payload.userId) {
-        visibilityConditions.push('visibility.eq.private');
-      }
-      query = query.or(visibilityConditions.join(','));
-    } else {
-      // 查看全部动态流：公开动态 + 好友的好友级别动态 + 自己的私密动态
-      const visibilityConditions = ['visibility.eq.public'];
-      if (friendIds.size > 0) {
-        const friendFilter = `and(visibility.eq.friends,user_id.in.(${Array.from(friendIds).join(',')}))`;
-        visibilityConditions.push(friendFilter);
-      }
-      const privateFilter = `and(visibility.eq.private,user_id.eq.${payload.userId})`;
-      visibilityConditions.push(privateFilter);
-      query = query.or(visibilityConditions.join(','));
+      query = query.eq('user_id', parseInt(user_id));
     }
 
     const { data: moments, error } = await query.range(offset, offset + limit - 1);
@@ -148,7 +119,7 @@ export async function POST(request: NextRequest) {
     if (!validated.success) {
       return NextResponse.json({ error: validated.error }, { status: 400 });
     }
-    const { content, images, visibility } = validated.data;
+    const { content, images } = validated.data;
 
     const client = getSupabaseClient();
 
@@ -159,9 +130,8 @@ export async function POST(request: NextRequest) {
         user_id: payload.userId,
         content: content || '',
         images: images || [],
-        visibility: visibility || 'public',
       })
-      .select('id, user_id, content, images, visibility, like_count, comment_count, created_at')
+      .select('id, user_id, content, images, like_count, comment_count, created_at')
       .single();
 
     if (error) throw new Error(`发布动态失败: ${error.message}`);

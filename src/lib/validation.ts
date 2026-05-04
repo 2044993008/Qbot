@@ -68,7 +68,6 @@ export const getMessagesSchema = z.object({
 export const publishMomentSchema = z.object({
   content: contentSchema,
   images: z.array(z.string().min(1)).max(9, '最多上传9张图片').optional(),
-  visibility: z.union([z.literal('public'), z.literal('friends'), z.literal('private')]).default('public'),
 });
 
 export const momentCommentSchema = z.object({

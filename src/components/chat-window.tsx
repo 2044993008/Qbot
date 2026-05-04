@@ -21,6 +21,14 @@ interface ChatWindowProps {
   isBotConversation?: boolean;
 }
 
+// 生成唯一的临时消息 ID（负数，避免与服务器返回的正数 ID 冲突）
+let tempIdCounter = 0;
+function generateTempId(): number {
+  tempIdCounter = (tempIdCounter + 1) % 1000000;
+  // 使用负数 ID，格式：-时间戳 + 计数器
+  return -(Date.now() + tempIdCounter);
+}
+
 // 获取管家用户信息（动态获取，而非硬编码）
 async function getBotUser(): Promise<User | null> {
   try {
@@ -158,7 +166,7 @@ export default function ChatWindow({
         // 发送失败，恢复输入框并显示错误提示
         setInputMessage(content);
         const errorMsg: Message = {
-          id: -Date.now(),
+          id: generateTempId(),
           conversation_id: conversationId,
           sender_id: 0,
           sender_nickname: '系统',
@@ -184,7 +192,7 @@ export default function ChatWindow({
             const botResponse = await botApi.send(content, conversationId);
             if (botResponse.type === 'preview' && botResponse.preview) {
               const previewMessage: Message = {
-                id: -Date.now(),
+                id: generateTempId(),
                 conversation_id: conversationId,
                 sender_id: botUser.id,
                 sender_nickname: botUser.nickname,
@@ -212,22 +220,12 @@ export default function ChatWindow({
 
   // 处理流式 Bot 回复（SSE 打字机效果）
   const handleStreamBotResponse = async (userContent: string, convId: number, bot: User) => {
-    const tempId = -Date.now();
     let fullContent = '';
     let previewData: Record<string, unknown> | null = null;
+    let tempId: number | null = null;
 
-    // 先添加一个空的 Bot 消息占位
-    const tempMessage: Message = {
-      id: tempId,
-      conversation_id: convId,
-      sender_id: bot.id,
-      sender_nickname: bot.nickname,
-      sender_avatar: bot.avatar_color,
-      type: 'text',
-      content: '',
-      created_at: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, tempMessage]);
+    // 保持 isTyping = true，显示"正在输入"指示器
+    // 当 bot 开始流式响应时，会创建真正的消息并关闭 isTyping
 
     try {
       const csrfToken = getCsrfToken();
@@ -267,9 +265,26 @@ export default function ChatWindow({
               const data = JSON.parse(line.slice(6));
               if (data.type === 'delta' && data.content) {
                 fullContent += data.content;
-                setMessages(prev =>
-                  prev.map(m => (m.id === tempId ? { ...m, content: fullContent } : m))
-                );
+                // 当收到第一个 delta 消息时，创建真正的消息并关闭 isTyping
+                if (tempId === null) {
+                  tempId = generateTempId();
+                  setIsTyping(false);
+                  const newMessage: Message = {
+                    id: tempId,
+                    conversation_id: convId,
+                    sender_id: bot.id,
+                    sender_nickname: bot.nickname,
+                    sender_avatar: bot.avatar_color,
+                    type: 'text',
+                    content: fullContent,
+                    created_at: new Date().toISOString(),
+                  };
+                  setMessages(prev => [...prev, newMessage]);
+                } else {
+                  setMessages(prev =>
+                    prev.map(m => (m.id === tempId ? { ...m, content: fullContent } : m))
+                  );
+                }
               } else if (data.type === 'preview') {
                 // Agent 返回了 preview，记录到局部变量，循环结束后统一应用
                 previewData = data.preview as Record<string, unknown>;
@@ -287,30 +302,73 @@ export default function ChatWindow({
       }
 
       // 循环结束后统一应用最终状态（避免 React 批处理导致 metadata 丢失）
+      if (tempId === null) {
+        // 如果没有收到任何 delta 消息，创建一个空消息
+        tempId = generateTempId();
+        setIsTyping(false);
+        const newMessage: Message = {
+          id: tempId,
+          conversation_id: convId,
+          sender_id: bot.id,
+          sender_nickname: bot.nickname,
+          sender_avatar: bot.avatar_color,
+          type: 'text',
+          content: fullContent || '已完成分析',
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, newMessage]);
+      }
+
       setMessages(prev => {
         const msg = prev.find(m => m.id === tempId);
         if (!msg) return prev;
 
         if (previewData) {
-          return prev.map(m =>
-            m.id === tempId
-              ? { ...msg, content: fullContent, metadata: { preview: previewData, isPreview: true } }
-              : m
-          );
+          // 先显示任务说明（文本消息）
+          const textMsg = { ...msg, content: fullContent || '已完成分析' };
+          // 添加一条预览消息（请求许可）
+          const previewMsg: Message = {
+            id: generateTempId(),
+            conversation_id: convId,
+            sender_id: bot.id,
+            sender_nickname: bot.nickname,
+            sender_avatar: bot.avatar_color,
+            type: 'text',
+            content: '请确认以下操作：',
+            metadata: { preview: previewData, isPreview: true },
+            created_at: new Date().toISOString(),
+          };
+          return [...prev.map(m => m.id === tempId ? textMsg : m), previewMsg];
         }
 
         return prev.map(m => (m.id === tempId ? { ...msg, content: fullContent } : m));
       });
     } catch (error) {
       console.error('流式 Bot 回复失败:', error);
+      setIsTyping(false);
       // 显示错误消息
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === tempId
-            ? { ...m, content: '抱歉，我这边出了点小问题，能再说一遍吗？' }
-            : m
-        )
-      );
+      if (tempId === null) {
+        // 如果没有收到任何消息，创建一个错误消息
+        const errorMessage: Message = {
+          id: generateTempId(),
+          conversation_id: convId,
+          sender_id: bot.id,
+          sender_nickname: bot.nickname,
+          sender_avatar: bot.avatar_color,
+          type: 'text',
+          content: '抱歉，我这边出了点小问题，能再说一遍吗？',
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      } else {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === tempId
+              ? { ...m, content: '抱歉，我这边出了点小问题，能再说一遍吗？' }
+              : m
+          )
+        );
+      }
     }
   };
 
@@ -338,7 +396,8 @@ export default function ChatWindow({
     if (preview.action === 'generate_image') {
       const result = await botApi.executeTool('generate_image', { prompt: preview.prompt, style: preview.style });
       if (result.imageUrl && conversationId) {
-        await messagesApi.send(conversationId, 'image', result.imageUrl);
+        // 使用 Bot 的 sender_id 发送图片
+        await botApi.executeTool('send_message', { conversation_id: conversationId, content: result.imageUrl, type: 'image' });
         return { success: true, message: '图片已生成并发送' };
       }
       return { success: false, message: result.error || '图片生成失败' };
@@ -347,7 +406,8 @@ export default function ChatWindow({
     if (preview.action === 'generate_video') {
       const result = await botApi.executeTool('generate_video', { prompt: preview.prompt, duration: preview.duration });
       if (result.videoUrl && conversationId) {
-        await messagesApi.send(conversationId, 'file', result.videoUrl);
+        // 使用 Bot 的 sender_id 发送视频
+        await botApi.executeTool('send_message', { conversation_id: conversationId, content: result.videoUrl, type: 'file' });
         return { success: true, message: '视频已生成并发送' };
       }
       return { success: false, message: result.error || '视频生成失败' };
@@ -387,6 +447,16 @@ export default function ChatWindow({
     const previewData = msg.metadata?.preview as BotResponse['preview'];
     if (!previewData) return;
 
+    // 检查是否正在执行（防止重复点击）
+    if (msg.metadata?.isExecuting) return;
+
+    // 标记为正在执行
+    setMessages(prev => prev.map(m => 
+      m.id === msg.id 
+        ? { ...m, metadata: { ...m.metadata, isExecuting: true } }
+        : m
+    ));
+
     // 支持 { actions: [...] } 格式（多步骤 Agent 编排返回）
     const actions: BotPreviewAction[] = 'actions' in previewData && Array.isArray((previewData as Record<string, unknown>).actions)
       ? (previewData as { actions: BotPreviewAction[] }).actions
@@ -406,7 +476,7 @@ export default function ChatWindow({
       // 移除预览消息，添加成功提示
       setMessages(prev => prev.filter(m => m.id !== msg.id));
       const successMessage: Message = {
-        id: -Date.now() - 1,
+        id: generateTempId(),
         conversation_id: conversationId!,
         sender_id: botUser!.id,
         sender_nickname: botUser!.nickname,
@@ -417,14 +487,14 @@ export default function ChatWindow({
       };
       setMessages(prev => [...prev, successMessage]);
 
-      // 刷新消息列表（如果涉及发送消息到其他会话）
-      await fetchMessages();
+      // 不调用 fetchMessages()，因为它会覆盖本地消息状态
+      // 如果涉及发送消息到其他会话，相关更新会通过 WebSocket 推送
     } catch (error) {
       console.error('确认操作失败:', error);
       // 移除预览消息，添加失败提示
       setMessages(prev => prev.filter(m => m.id !== msg.id));
       const errorMessage: Message = {
-        id: -Date.now() - 1,
+        id: generateTempId(),
         conversation_id: conversationId!,
         sender_id: botUser!.id,
         sender_nickname: botUser!.nickname,
@@ -441,7 +511,7 @@ export default function ChatWindow({
   const handleCancelAction = (msg: Message) => {
     setMessages(prev => prev.filter(m => m.id !== msg.id));
     const cancelMessage: Message = {
-      id: -Date.now() - 1,
+      id: generateTempId(),
       conversation_id: conversationId!,
       sender_id: botUser!.id,
       sender_nickname: botUser!.nickname,

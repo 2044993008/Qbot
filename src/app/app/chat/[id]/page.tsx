@@ -143,16 +143,20 @@ export default function ChatPage({ params }: PageProps) {
       const loadConversationInfo = async () => {
         try {
           const urlId = parseInt(resolvedParams.id);
-          const loadedFriend = await loadFriendTargetInfo(urlId);
-          if (loadedFriend) {
-            return;
-          }
 
+          // 优先按 conversation ID 查找（聊天列表使用 conversation.id 路由）
           const loadedConversation = await loadConversationTargetInfo(urlId);
           if (loadedConversation) {
             return;
           }
 
+          // 其次按好友 ID 查找（好友列表使用 user.id 路由）
+          const loadedFriend = await loadFriendTargetInfo(urlId);
+          if (loadedFriend) {
+            return;
+          }
+
+          // 最后按群 ID 查找（群聊列表使用 group.id 路由）
           const loadedGroup = await loadGroupTargetInfo(urlId);
           if (loadedGroup) {
             return;
@@ -170,7 +174,6 @@ export default function ChatPage({ params }: PageProps) {
           console.error('获取会话信息失败:', error);
         }
       };
-
       loadConversationInfo();
     }
   }, [authLoading, isAuthenticated, isBotReady, botUserId, resolvedParams.id]);

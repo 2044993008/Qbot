@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Search, Plus } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { conversationsApi } from '@/lib/api';
 
 interface ChatListProps {
   onSelectChat: (type: 'private' | 'group', id: number, name: string, avatar?: string) => void;
@@ -165,9 +166,18 @@ export default function ChatList({ onSelectChat }: ChatListProps) {
               sortedFriends.map((friend) => (
                 <div
                   key={`friend-${friend.id}`}
-                  onClick={() => {
+                  onClick={async () => {
                     onSelectChat('private', friend.id, friend.remark || friend.nickname, friend.avatar_color);
-                    router.push(`/app/chat/${friend.id}`);
+                    try {
+                      const conv = await conversationsApi.getOrCreate('private', friend.id);
+                      if (conv?.conversation) {
+                        router.push(`/app/chat/${conv.conversation.id}`);
+                      } else {
+                        router.push(`/app/chat/${friend.id}`);
+                      }
+                    } catch {
+                      router.push(`/app/chat/${friend.id}`);
+                    }
                   }}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"
                 >
@@ -207,9 +217,18 @@ export default function ChatList({ onSelectChat }: ChatListProps) {
               filteredGroups.map((group) => (
                 <div
                   key={`group-${group.id}`}
-                  onClick={() => {
+                  onClick={async () => {
                     onSelectChat('group', group.id, group.name, group.avatar_color);
-                    router.push(`/app/chat/${group.id}`);
+                    try {
+                      const conv = await conversationsApi.getOrCreate('group', group.id);
+                      if (conv?.conversation) {
+                        router.push(`/app/chat/${conv.conversation.id}`);
+                      } else {
+                        router.push(`/app/chat/${group.id}`);
+                      }
+                    } catch {
+                      router.push(`/app/chat/${group.id}`);
+                    }
                   }}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b"
                 >

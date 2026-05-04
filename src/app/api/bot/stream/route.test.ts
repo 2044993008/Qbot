@@ -160,7 +160,7 @@ describe('Bot Stream API Route', () => {
         fullText += decoder.decode(value, { stream: true });
       }
     }
-    // Should contain an error event somewhere in the stream
-    expect(fullText).toContain('error');
+    // Agent catches the error and returns a fallback message
+    expect(fullText).toContain('走神');
   });
 });

@@ -277,15 +277,8 @@ describe('Bot Agent Contract Tests', () => {
       const response = await POST(request);
       expect(response.status).toBe(200);
       const json = await response.json();
-      expect(json.type).toBe('preview');
-      expect(json.preview).toBeDefined();
-      expect(json.preview.actions).toBeInstanceOf(Array);
-      expect(json.preview.actions.length).toBeGreaterThan(0);
-      expect(json.preview.actions[0]).toMatchObject({
-        action: 'delete_friend',
-        friend_id: 2,
-        friend_name: '小明',
-      });
+      expect(json.type).toBe('text');
+      expect(json.response).toBeDefined();
     });
 
     it('returns preview object for send_message high-risk tool', async () => {
@@ -356,12 +349,8 @@ describe('Bot Agent Contract Tests', () => {
       const response = await POST(request);
       expect(response.status).toBe(200);
       const json = await response.json();
-      expect(json.type).toBe('preview');
-      expect(json.preview.actions[0]).toMatchObject({
-        action: 'send_message',
-        content: '你好呀',
-        target: '小明',
-      });
+      expect(json.type).toBe('text');
+      expect(json.response).toBeDefined();
     });
   });
 

@@ -903,7 +903,6 @@ async function toolSendMessage(
   targetType?: string,
   targetId?: number,
   targetName?: string,
-  preview?: boolean,
   imageUrl?: string
 ) {
   try {
@@ -994,7 +993,12 @@ async function toolSendMessage(
               resolvedTargetId = targetUser.id;
               resolvedTargetType = 'friend';
             }
+          } else {
+            // 找不到匹配的好友，返回错误
+            return { success: false, error: `找不到「${targetName}」这个人，请检查名字是否正确` };
           }
+        } else {
+          return { success: false, error: '您还没有好友，无法发送消息' };
         }
       }
     } else {
@@ -1031,21 +1035,6 @@ async function toolSendMessage(
 
     if (!conversationId || !resolvedTargetId) {
       return { success: false, error: '找不到目标会话' };
-    }
-
-    // 预览模式：只返回预览信息，不实际发送
-    if (preview) {
-      return {
-        preview: {
-          action: 'send_message' as const,
-          content,
-          target: targetDisplayName,
-          target_type: resolvedTargetType,
-          target_id: resolvedTargetId,
-          conversation_id: conversationId,
-          image_url: imageUrl,
-        }
-      };
     }
 
     // 实际发送消息（支持图片）
@@ -1095,32 +1084,49 @@ async function toolSendMessage(
   }
 }
 
-// Tool: publish_moment - 返回发布动态预览（不实际发布）
+// Tool: publish_moment - 发布动态
 async function toolPublishMoment(
-  _client: SupabaseClient,
-  _userId: number,
+  client: SupabaseClient,
+  userId: number,
   content?: string,
   imageUrls?: string[]
 ) {
-  // 如果没有提供内容，生成一个
-  let momentContent = content;
-  if (!momentContent) {
-    const ideas = [
-      '摸鱼一时爽，一直摸鱼一直爽~',
-      '今日份快乐：摸鱼打卡！',
-      '假装很努力中...其实在摸鱼',
-      '摸鱼使我快乐，快乐使我摸鱼~',
-    ];
-    momentContent = ideas[Math.floor(Math.random() * ideas.length)];
-  }
-
-  return {
-    preview: {
-      action: 'publish_moment' as const,
-      content: momentContent,
-      image_urls: imageUrls || [],
+  try {
+    // 如果没有提供内容，生成一个
+    let momentContent = content;
+    if (!momentContent) {
+      const ideas = [
+        '摸鱼一时爽，一直摸鱼一直爽~',
+        '今日份快乐：摸鱼打卡！',
+        '假装很努力中...其实在摸鱼',
+        '摸鱼使我快乐，快乐使我摸鱼~',
+      ];
+      momentContent = ideas[Math.floor(Math.random() * ideas.length)];
     }
-  };
+
+    // 发布动态
+    const { data: moment, error } = await client
+      .from('moments')
+      .insert({
+        user_id: userId,
+        content: momentContent,
+        images: imageUrls || [],
+      })
+      .select('id, created_at')
+      .single();
+
+    if (error) throw new Error(`发布动态失败: ${error.message}`);
+
+    return {
+      success: true,
+      message: '动态已发布',
+      moment_id: moment.id,
+      time: new Date(moment.created_at).toLocaleString('zh-CN'),
+    };
+  } catch (error) {
+    console.error('发布动态失败:', error);
+    return { success: false, error: '发布动态时发生错误' };
+  }
 }
 
 // Tool: create_task - 创建定时任务
@@ -1321,15 +1327,23 @@ async function doGenerateVideo(_prompt: string, _duration_unused = 5): Promise<{
   return { videoUrl: null, error: '当前平台暂不支持视频生成' };
 }
 
-// Tool: generate_image - 返回生成图片预览（不实际生成）
-async function toolGenerateImage(prompt: string, style = 'realistic') {
-  return {
-    preview: {
-      action: 'generate_image' as const,
-      prompt,
-      style,
+// Tool: generate_image - 生成图片
+async function toolGenerateImage(client: SupabaseClient, userId: number, prompt: string, style = 'realistic') {
+  try {
+    const result = await doGenerateImage(prompt, style);
+    if (result.imageUrl) {
+      // 使用 Bot 的 sender_id 发送图片
+      const sendResult = await doSendMessageAsBot(client, userId, 0, result.imageUrl, 'image');
+      if (sendResult.success) {
+        return { success: true, message: '图片已生成并发送', imageUrl: result.imageUrl };
+      }
+      return { success: false, error: '图片生成成功但发送失败' };
     }
-  };
+    return { success: false, error: result.error || '图片生成失败' };
+  } catch (error) {
+    console.error('生成图片失败:', error);
+    return { success: false, error: '图片生成时发生错误' };
+  }
 }
 
 // Tool: generate_video - 返回生成视频预览（不实际生成）
@@ -1495,12 +1509,12 @@ async function toolEditMoment(
   newImages?: string[]
 ) {
   try {
-    let targetMoment: { id: number; content: string; image_urls: string[] | null; created_at: string } | null = null;
+    let targetMoment: { id: number; content: string; images: string[] | null; created_at: string } | null = null;
 
     if (momentId) {
       const { data } = await client
         .from('moments')
-        .select('id, content, image_urls, created_at')
+        .select('id, content, images, created_at')
         .eq('id', momentId)
         .eq('user_id', userId)
         .single();
@@ -1508,7 +1522,7 @@ async function toolEditMoment(
     } else if (keyword) {
       const { data } = await client
         .from('moments')
-        .select('id, content, image_urls, created_at')
+        .select('id, content, images, created_at')
         .eq('user_id', userId)
         .ilike('content', `%${keyword}%`)
         .order('created_at', { ascending: false })
@@ -1529,7 +1543,7 @@ async function toolEditMoment(
         moment_id: targetMoment.id,
         old_content: targetMoment.content,
         new_content: newContent || targetMoment.content,
-        new_images: newImages || targetMoment.image_urls || [],
+        new_images: newImages || targetMoment.images || [],
       }
     };
   } catch (error) {
@@ -1635,11 +1649,9 @@ async function doEditMoment(
   newImages?: string[]
 ) {
   try {
-    const updates: { content?: string; image_urls?: string[]; updated_at: string } = {
-      updated_at: new Date().toISOString(),
-    };
+    const updates: { content?: string; images?: string[] } = {};
     if (newContent !== undefined) updates.content = newContent;
-    if (newImages !== undefined) updates.image_urls = newImages;
+    if (newImages !== undefined) updates.images = newImages;
 
     const { error } = await client
       .from('moments')
@@ -1691,9 +1703,9 @@ async function executeTool(client: SupabaseClient, userId: number, name: string,
     case 'suggest_moment': return toolSuggestMoment();
     case 'publish_moment': return toolPublishMoment(client, userId, args.content as string, args.image_urls as string[]);
     case 'get_user_info': return toolGetUserInfo(client, userId);
-    case 'generate_image': return toolGenerateImage(args.prompt as string, args.style as string);
+    case 'generate_image': return toolGenerateImage(client, userId, args.prompt as string, args.style as string);
     case 'generate_video': return toolGenerateVideo(args.prompt as string, args.duration as number);
-    case 'send_message': return toolSendMessage(client, userId, args.content as string, args.target_type as string, args.target_id as number, args.target_name as string, args.preview as boolean, args.image_url as string);
+    case 'send_message': return toolSendMessage(client, userId, args.content as string, args.target_type as string, args.target_id as number, args.target_name as string, args.image_url as string);
     case 'create_task': return toolCreateTask(client, userId, args.name as string, args.cron_expression as string, args.description as string, args.config as Record<string, unknown>);
     case 'delete_friend': return toolDeleteFriend(client, userId, args.friend_id as number, args.friend_name as string);
     case 'leave_group': return toolLeaveGroup(client, userId, args.group_id as number, args.group_name as string);
@@ -1708,11 +1720,67 @@ async function executeToolDirectly(client: SupabaseClient, userId: number, name:
   switch (name) {
     case 'generate_image': return doGenerateImage(args.prompt as string, args.style as string);
     case 'generate_video': return doGenerateVideo(args.prompt as string, args.duration as number);
+    case 'send_message': return doSendMessageAsBot(client, userId, args.conversation_id as number, args.content as string, args.type as string);
     case 'delete_friend': return doDeleteFriend(client, userId, args.friend_id as number);
     case 'leave_group': return doLeaveGroup(client, userId, args.group_id as number);
     case 'edit_moment': return doEditMoment(client, userId, args.moment_id as number, args.new_content as string, args.new_images as string[]);
     case 'delete_moment': return doDeleteMoment(client, userId, args.moment_id as number);
     default: return { error: `Direct execution not supported for tool: ${name}` };
+  }
+}
+
+// Bot 发送消息（使用 Bot 的 sender_id）
+async function doSendMessageAsBot(client: SupabaseClient, userId: number, conversationId: number, content: string, type: string = 'text') {
+  try {
+    // 获取 Bot 用户信息
+    const { data: botUser } = await client
+      .from('users')
+      .select('id')
+      .eq('nickname', '小 Q 管家')
+      .maybeSingle();
+
+    if (!botUser) {
+      return { success: false, error: 'Bot 用户不存在' };
+    }
+
+    // 验证会话是否属于当前用户
+    const { data: conversation } = await client
+      .from('conversations')
+      .select('user_id')
+      .eq('id', conversationId)
+      .single();
+
+    if (!conversation || conversation.user_id !== userId) {
+      return { success: false, error: '无权向该会话发送消息' };
+    }
+
+    // 插入消息（使用 Bot 的 sender_id）
+    const { data: message, error } = await client
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_id: botUser.id,
+        type: type,
+        content: content,
+      })
+      .select('id, created_at')
+      .single();
+
+    if (error) throw new Error(`发送消息失败: ${error.message}`);
+
+    // 更新会话的最后消息
+    await client
+      .from('conversations')
+      .update({
+        last_message: type === 'image' ? '[图片]' : content.substring(0, 50),
+        last_message_time: message.created_at,
+      })
+      .eq('id', conversationId);
+
+    return { success: true, message: '消息已发送' };
+  } catch (error) {
+    console.error('Bot 发送消息失败:', error);
+    return { success: false, error: '发送消息时发生错误' };
   }
 }
 
@@ -1751,7 +1819,7 @@ export function cleanContent(content: string): string {
 // ReAct Agent
 // ============================================
 
-async function runReActAgent(client: SupabaseClient, userId: number, userMessage: string): Promise<{ content: string; preview?: Record<string, unknown>; toolCalls?: unknown[] }> {
+async function runReActAgent(client: SupabaseClient, userId: number, userMessage: string): Promise<{ content: string; toolCalls?: unknown[] }> {
   // 获取上下文
   const identity = await toolReadIdentity(client, userId);
   const memory = await toolReadMemory(client, userId);
@@ -1778,40 +1846,46 @@ async function runReActAgent(client: SupabaseClient, userId: number, userMessage
   * 用户说"每天晚上10点提醒睡觉" → name="睡觉提醒", cron_expression="0 22 * * *", description="每天晚上10点提醒睡觉"
 
 【高风险操作规则 - 强制】
-当用户请求涉及以下行为时，你必须调用对应工具并返回预览，绝对不允许仅用文字回复代替：
-1. 发送消息/代发消息/帮别人发消息 → 调用 send_message(..., preview: true)
-2. 发布QQ空间/发动态/发说说 → 调用 publish_moment(...)
-3. 生成图片/画画/出图 → 调用 generate_image(...)
-4. 生成视频/做视频/出片 → 调用 generate_video(...)
-5. 删除好友/移除好友/删人 → 调用 delete_friend(...)
-6. 退出群聊/退群/离开群 → 调用 leave_group(...)
-7. 编辑QQ空间动态/修改说说 → 调用 edit_moment(...)
-8. 删除QQ空间动态/删说说 → 调用 delete_moment(...)
-
-⚠️ 违反规则示例（禁止）：
-用户说"给小明发个消息"，你只回复"好的，我帮你发给小明" → ❌ 错误！必须调用 send_message 工具。
-用户说"帮我发空间"，你只回复"文案准备好了，要发吗" → ❌ 错误！必须调用 publish_moment 工具。
-用户说"删了小明"，你只回复"好的，已删除" → ❌ 错误！必须调用 delete_friend 工具返回预览。
-用户说"退群"，你只回复"好的，已退群" → ❌ 错误！必须调用 leave_group 工具返回预览。
+当用户请求涉及以下行为时，你必须先询问用户是否确认，绝对不允许直接执行：
+1. 发送消息/代发消息/帮别人发消息 → 先确认再调用 send_message
+2. 发布QQ空间/发动态/发说说 → 先确认再调用 publish_moment
+3. 生成图片/画画/出图 → 先确认再调用 generate_image
+4. 生成视频/做视频/出片 → 先确认再调用 generate_video
+5. 删除好友/移除好友/删人 → 先确认再调用 delete_friend
+6. 退出群聊/退群/离开群 → 先确认再调用 leave_group
+7. 编辑QQ空间动态/修改说说 → 先确认再调用 edit_moment
+8. 删除QQ空间动态/删说说 → 先确认再调用 delete_moment
 
 正确做法：
-- 先调用对应工具获取 preview 信息
-- 在回复中自然地告诉用户你准备做什么
-- 在回复末尾附上 TOOL_CALL 标记
+1. 先理解用户意图
+2. 准备好工具调用的参数
+3. 在回复中告诉用户你准备做什么，并询问"确认执行吗？"
+4. 等待用户回复"确认"、"好"、"可以"、"执行"等肯定词后再调用工具
+
+示例：
+用户："给小明发个消息说明天开会"
+回复："好的，我准备给小明发消息：'明天开会'，确认发送吗？"
+用户："确认"
+回复：[TOOL_CALL:{"name":"send_message","arguments":{"content":"明天开会","target_name":"小明"}}]
+[TOOL_CALL_END]
 
 【代发消息规则】
 当用户要求"给XX发..."或"帮我说..."时：
 1. 先调用 polish_text 润色内容（按用户要求的语气）
-2. 然后调用 send_message 并设置 preview=true，返回预览（不要直接执行发送）
-3. 在回复中说明："我帮你润色了一下：'...'，要发给XX吗？"
+2. 在回复中告诉用户你准备发送的内容和目标
+3. 询问用户"确认发送吗？"
+4. 等待用户确认后再调用 send_message 工具
 
 【工具调用格式 - 严格遵守】
 当需要调用工具时，在回复末尾追加以下格式的文本（不要修改格式，不要省略任何部分）：
 [TOOL_CALL:{"name":"工具名","arguments":{"参数":"值"}}]
 [TOOL_CALL_END]
 
-示例：
-[TOOL_CALL:{"name":"send_message","arguments":{"content":"你好","target_name":"小明","preview":true}}]
+示例（用户确认后调用）：
+[TOOL_CALL:{"name":"send_message","arguments":{"content":"你好","target_name":"小明"}}]
+[TOOL_CALL_END]
+
+[TOOL_CALL:{"name":"publish_moment","arguments":{"content":"今天天气真好","image_urls":[]}}]
 [TOOL_CALL_END]
 
 如果不需要工具，直接回答即可。
@@ -1872,26 +1946,20 @@ ${memory.daily_notes || '（暂无）'}
   ], { temperature: 0.8 });
 
   const toolCalls = parseToolCalls(content);
-  const previewData: Record<string, unknown>[] = [];
 
   // 【防护层】只对"模糊的高危意图"且LLM未触发tool call时拦截
   // 如果用户意图明确（如"发给小明"、"发空间"），不拦截，让LLM自己处理
   if (riskCheck.isRisky && !riskCheck.isExplicit && toolCalls.length === 0) {
     return {
       content: '我注意到你可能想让我帮忙发送内容或生成媒体，请再说得具体一点，比如"发给谁"、"发什么"，我会先给你预览确认~',
-      preview: undefined,
     };
   }
 
   // 如果有工具调用，执行并反馈
   if (toolCalls.length > 0) {
     const toolResults = [];
-    const highRiskTools = ['send_message', 'publish_moment', 'generate_image', 'generate_video', 'delete_friend', 'leave_group', 'edit_moment', 'delete_moment'];
     for (const call of toolCalls) {
       const result = await executeTool(client, userId, call.name, call.arguments);
-      if (highRiskTools.includes(call.name) && result && typeof result === 'object' && 'preview' in result) {
-        previewData.push(result.preview as Record<string, unknown>);
-      }
       toolResults.push(`[${call.name} 结果] ${JSON.stringify(result)}`);
     }
 
@@ -1917,7 +1985,6 @@ ${memory.daily_notes || '（暂无）'}
 
   return {
     content: content || '好的~',
-    preview: previewData.length > 0 ? { actions: previewData } : undefined,
     toolCalls: toolCalls.length > 0 ? toolCalls.map(c => ({ name: c.name, arguments: c.arguments })) : [],
   };
 }
@@ -1958,9 +2025,9 @@ async function planRequest(client: SupabaseClient, userId: number, userMessage: 
 - search_messages(keyword, group_name?) - 搜索群聊消息
 - get_my_messages(group_name?) - 获取用户自己的消息
 - polish_text(text, style?) - 润色文本
-- send_message(content, target_name?, preview=true) - 发送消息（预览模式）
-- publish_moment(content, image_urls?) - 发布空间动态（预览模式）
-- generate_image(prompt, style?) - 生成图片（预览模式）
+- send_message(content, target_name?) - 发送消息
+- publish_moment(content, image_urls?) - 发布空间动态
+- generate_image(prompt, style?) - 生成图片
 
 只输出 JSON 格式：
 {
@@ -1992,15 +2059,25 @@ async function planRequest(client: SupabaseClient, userId: number, userMessage: 
   };
 }
 
+// 工具结果转为可读摘要
+function summarizeToolResult(toolName: string, result: unknown): string {
+  if (!result || typeof result !== 'object') return String(result);
+  const r = result as Record<string, unknown>;
+  if (r.success === false) return `失败: ${r.error || r.message || '未知错误'}`;
+  if (r.message) return String(r.message);
+  if (r.result) return String(r.result);
+  if (r.nickname) return String(r.nickname); // get_user_info
+  return JSON.stringify(result);
+}
+
 // Executor：执行计划步骤
 async function executePlan(
   client: SupabaseClient,
   userId: number,
   plan: ExecutionPlan,
   userMessage: string
-): Promise<{ content: string; preview?: Record<string, unknown>; toolCalls?: unknown[] }> {
+): Promise<{ content: string; toolCalls?: unknown[] }> {
   const stepResults: string[] = [];
-  const previewData: Record<string, unknown>[] = [];
   const allToolCalls: unknown[] = [];
 
   for (const step of plan.steps) {
@@ -2008,34 +2085,30 @@ async function executePlan(
       // 执行工具调用
       try {
         const result = await executeTool(client, userId, step.tool, step.params || {});
-        const highRiskTools = ['send_message', 'publish_moment', 'generate_image', 'generate_video', 'delete_friend', 'leave_group', 'edit_moment', 'delete_moment'];
-        if (highRiskTools.includes(step.tool) && result && typeof result === 'object' && 'preview' in result) {
-          previewData.push(result.preview as Record<string, unknown>);
-        }
-        stepResults.push(`步骤${step.step} (${step.action}): ${JSON.stringify(result)}`);
+        const summary = summarizeToolResult(step.tool, result);
+        stepResults.push(`${step.action}: ${summary}`);
         allToolCalls.push({ name: step.tool, arguments: step.params, result });
       } catch (error) {
-        stepResults.push(`步骤${step.step} (${step.action}) 失败: ${error instanceof Error ? error.message : String(error)}`);
+        stepResults.push(`${step.action}: 失败 - ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }
 
   // Observer：基于执行结果生成最终回复
-  const observePrompt = `基于以下执行结果，给出最终回复。如果涉及高危操作（发送消息、删除好友等），请说明已生成预览等待用户确认。
+  const observePrompt = `用户请求：${userMessage}
 
-用户原始请求：${userMessage}
-执行计划：${plan.summary}
-步骤结果：
-${stepResults.join('\n')}`;
+已执行的操作和结果：
+${stepResults.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+
+请用简洁友好的中文回复用户，告诉他操作结果。不要使用模板变量或占位符。`;
 
   const finalContent = await callOpenAICompatible([
-    { role: 'system', content: '你是一个结果汇总助手，用简洁友好的中文总结执行结果。' },
+    { role: 'system', content: '你是小Q管家，用简洁友好的中文回复用户。直接描述操作结果，不要使用占位符。' },
     { role: 'user', content: observePrompt },
   ], { temperature: 0.8 });
 
   return {
     content: finalContent || '任务执行完成~',
-    preview: previewData.length > 0 ? { actions: previewData } : undefined,
     toolCalls: allToolCalls,
   };
 }
@@ -2045,7 +2118,7 @@ async function runPlanExecuteAgent(
   client: SupabaseClient,
   userId: number,
   userMessage: string
-): Promise<{ content: string; preview?: Record<string, unknown>; toolCalls?: unknown[] }> {
+): Promise<{ content: string; toolCalls?: unknown[] }> {
   // Step 1: Plan
   const plan = await planRequest(client, userId, userMessage);
 
@@ -2058,7 +2131,7 @@ async function runPlanExecuteAgent(
   return result;
 }
 
-async function runReActAgentWithTimeout(client: SupabaseClient, userId: number, userMessage: string, timeoutMs = 40000): Promise<{ content: string; preview?: Record<string, unknown>; toolCalls?: unknown[] }> {
+async function runReActAgentWithTimeout(client: SupabaseClient, userId: number, userMessage: string, timeoutMs = 40000): Promise<{ content: string; toolCalls?: unknown[] }> {
   // 检测是否为复杂请求，如果是则使用 Plan-Execute-Observe 模式
   if (detectComplexRequest(userMessage)) {
     return Promise.race([
@@ -2190,7 +2263,6 @@ export async function POST(request: NextRequest) {
       runReActAgentWithTimeout(client, payload.userId, userMessage)
     );
     const response = result.content;
-    const preview = result.preview;
 
     // 更新审计日志
     if (auditLog) {
@@ -2245,14 +2317,6 @@ export async function POST(request: NextRequest) {
         } catch (e) {
           console.error('审计日志写入失败:', e);
         }
-      });
-    }
-
-    if (preview) {
-      return NextResponse.json({
-        response,
-        type: 'preview',
-        preview,
       });
     }
 
