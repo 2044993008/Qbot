@@ -36,13 +36,54 @@ async function openBotChat(page: Page) {
   await expect(page.locator('textarea[placeholder*="输入消息"]')).toBeVisible({ timeout: 10000 });
 }
 
+/**
+ * 等待最后一条 Bot 消息文本稳定（连续 3 次 poll 相同）。
+ * 用于确保上一条 SSE 流已完全结束，DOM 不再变动。
+ */
+async function waitForMessageStable(page: Page, timeout = 30000): Promise<void> {
+  const botMessages = page.locator('.message-bubble-received:not(:has(.animate-bounce))');
+  const startTime = Date.now();
+  let lastText = '';
+  let stableCount = 0;
+
+  while (Date.now() - startTime < timeout) {
+    const count = await botMessages.count();
+    if (count > 0) {
+      const text = await botMessages.last().textContent({ timeout: 2000 }).catch(() => '');
+      const trimmed = text.trim();
+      if (trimmed.length > 3 && trimmed === lastText) {
+        stableCount++;
+        if (stableCount >= 3) return;
+      } else {
+        stableCount = 0;
+        lastText = trimmed;
+      }
+    }
+    await page.waitForTimeout(1000);
+  }
+}
+
 async function sendMessage(page: Page, message: string): Promise<{ botCountBefore: number; lastKnownText: string }> {
-  // 1. 确保上一条 SSE 流已完全结束：等待 typing indicator 消失
+  // 1. 确保上一条 SSE 流已完全结束：先等 typing indicator 消失，再等消息数量增加且文本稳定
   const typingIndicator = page.locator('.message-bubble-received:has(.animate-bounce)');
   try {
     await expect(typingIndicator).toBeHidden({ timeout: 30000 });
   } catch {
     // 没有 typing indicator，继续
+  }
+
+  // 等待最后一条 Bot 消息完全出现并稳定（防止串行锁排队导致的错位）
+  const botMessages = page.locator('.message-bubble-received:not(:has(.animate-bounce))');
+  const countBeforeWait = await botMessages.count();
+  const waitStart = Date.now();
+  while (Date.now() - waitStart < 30000) {
+    const currentCount = await botMessages.count();
+    if (currentCount > countBeforeWait) {
+      // 新 Bot 回复已出现，等它稳定
+      await waitForMessageStable(page, 15000);
+      break;
+    }
+    await page.waitForTimeout(1000);
   }
 
   const input = page.locator('textarea[placeholder*="输入消息"]');
@@ -53,7 +94,6 @@ async function sendMessage(page: Page, message: string): Promise<{ botCountBefor
   const userCountBefore = await userMessages.count();
 
   // 记录当前 Bot 消息数量（不含 typing indicator）和最后一条已知文本
-  const botMessages = page.locator('.message-bubble-received:not(:has(.animate-bounce))');
   const botCountBefore = await botMessages.count();
   const lastKnownText = botCountBefore > 0
     ? (await botMessages.nth(botCountBefore - 1).textContent({ timeout: 2000 }).catch(() => '')).trim()
@@ -230,6 +270,10 @@ test('AI Butler - Single page continuous complex command chain', async ({ page }
 
   await openBotChat(page);
   await takeScreenshot(page, '01_enter_bot_chat');
+
+  // 等待页面上的所有积压 Bot 消息处理完成（防止之前测试/手动操作的残留消息干扰）
+  console.log('Waiting for any pending bot messages to stabilize...');
+  await waitForMessageStable(page, 30000);
 
   // Execute 10 commands continuously
   for (let i = 0; i < COMMANDS.length; i++) {

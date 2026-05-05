@@ -320,12 +320,12 @@ export default function ChatWindow({
       }
 
       setMessages(prev => {
-        const msg = prev.find(m => m.id === tempId);
-        if (!msg) return prev;
+        const msgIndex = prev.findIndex(m => m.id === tempId);
+        if (msgIndex === -1) return prev;
 
         if (previewData) {
           // 先显示任务说明（文本消息）
-          const textMsg = { ...msg, content: fullContent || '已完成分析' };
+          const textMsg = { ...prev[msgIndex], content: fullContent || '已完成分析' };
           // 添加一条预览消息（请求许可）
           const previewMsg: Message = {
             id: generateTempId(),
@@ -338,10 +338,16 @@ export default function ChatWindow({
             metadata: { preview: previewData, isPreview: true },
             created_at: new Date().toISOString(),
           };
-          return [...prev.map(m => m.id === tempId ? textMsg : m), previewMsg];
+          // 在 tempId 消息之后插入 previewMsg，而不是追加到列表末尾
+          return [
+            ...prev.slice(0, msgIndex),
+            textMsg,
+            previewMsg,
+            ...prev.slice(msgIndex + 1),
+          ];
         }
 
-        return prev.map(m => (m.id === tempId ? { ...msg, content: fullContent } : m));
+        return prev.map(m => (m.id === tempId ? { ...m, content: fullContent } : m));
       });
     } catch (error) {
       console.error('流式 Bot 回复失败:', error);

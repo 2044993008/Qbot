@@ -53,12 +53,40 @@ export async function GET(request: NextRequest) {
       groupTargets = groups || [];
     }
 
+    // 动态查询每个会话的最新消息内容（避免 last_message 字段不同步）
+    const conversationIds = conversations.map(c => c.id);
+    const { data: latestMessages } = await client
+      .from('messages')
+      .select('conversation_id, content, type, created_at')
+      .in('conversation_id', conversationIds)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    // 取每个会话的最新一条消息
+    const latestMessageMap = new Map<number, { content: string; type: string }>();
+    if (latestMessages) {
+      for (const msg of latestMessages) {
+        if (!latestMessageMap.has(msg.conversation_id)) {
+          latestMessageMap.set(msg.conversation_id, {
+            content: msg.type === 'image' ? '[图片]' : (msg.content || '').substring(0, 50),
+            type: msg.type,
+          });
+        }
+      }
+    }
+
     // 合并数据
     const conversationsWithTargets = conversations.map(conv => {
+      const latest = latestMessageMap.get(conv.id);
+      const enriched = {
+        ...conv,
+        last_message: latest?.content || conv.last_message || '暂无消息',
+      };
+
       if (conv.type === 'private') {
         const target = privateTargets.find(t => t.id === conv.target_id);
         return {
-          ...conv,
+          ...enriched,
           target_name: target?.nickname || '未知',
           target_avatar: target?.avatar_color || '#666',
           target_status: target?.status,
@@ -67,7 +95,7 @@ export async function GET(request: NextRequest) {
 
       const target = groupTargets.find(t => t.id === conv.target_id);
       return {
-        ...conv,
+        ...enriched,
         target_name: target?.name || '未知',
         target_avatar: target?.avatar_color || '#666',
         target_status: undefined,

@@ -26,16 +26,29 @@ interface OpenAICompletionResponse {
   };
 }
 
-function getOpenAIConfig() {
-  const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-  const apiKey = process.env.OPENAI_API_KEY || '';
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+// 聊天模型配置（用于对话、规划、观察、embedding）
+function getChatConfig() {
+  const baseUrl = process.env.CHAT_BASE_URL || 'https://api.openai.com/v1';
+  const apiKey = process.env.CHAT_API_KEY || '';
+  const model = process.env.CHAT_MODEL || 'gpt-4o-mini';
 
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY is not set');
+    throw new Error('CHAT_API_KEY is not set');
   }
 
   return { baseUrl: baseUrl.replace(/\/$/, ''), apiKey, model };
+}
+
+// 生图模型配置（DashScope 阿里云百炼，用于图片生成）
+function getImageGenConfig() {
+  const baseUrl = process.env.IMAGE_GEN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  const apiKey = process.env.IMAGE_GEN_API_KEY || '';
+
+  if (!apiKey) {
+    throw new Error('IMAGE_GEN_API_KEY is not set');
+  }
+
+  return { baseUrl: baseUrl.replace(/\/$/, ''), apiKey };
 }
 
 // ============================================
@@ -81,7 +94,7 @@ async function callOpenAICompatible(
   messages: OpenAIMessage[],
   options: { temperature?: number; maxTokens?: number } = {}
 ): Promise<string> {
-  const { baseUrl, apiKey, model } = getOpenAIConfig();
+  const { baseUrl, apiKey, model } = getChatConfig();
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
@@ -120,7 +133,7 @@ async function callOpenAICompatibleStream(
   messages: OpenAIMessage[],
   options: { temperature?: number; maxTokens?: number } = {}
 ): Promise<ReadableStream<Uint8Array>> {
-  const { baseUrl, apiKey, model } = getOpenAIConfig();
+  const { baseUrl, apiKey, model } = getChatConfig();
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
@@ -155,7 +168,7 @@ async function callOpenAICompatibleStream(
 
 async function generateEmbedding(text: string): Promise<number[]> {
   try {
-    const { baseUrl, apiKey } = getOpenAIConfig();
+    const { baseUrl, apiKey } = getChatConfig();
     // DashScope/OpenAI 兼容的 embedding API
     const response = await fetch(`${baseUrl}/embeddings`, {
       method: 'POST',
@@ -504,12 +517,14 @@ ${memory.substring(0, 8000)}
 
 // Tool: read_identity
 async function toolReadIdentity(client: SupabaseClient, userId: number) {
-  const identity = await getSetting(client, userId, 'bot_identity') || '';
-  const user = await getSetting(client, userId, 'bot_user') || '';
+  const [identity, user] = await Promise.all([
+    getSetting(client, userId, 'bot_identity'),
+    getSetting(client, userId, 'bot_user'),
+  ]);
 
-  const botNameMatch = identity.match(/- 名称：(.+)/);
-  const userCallMatch = user.match(/- 用户称谓：(.+)/);
-  const userNameMatch = user.match(/- 用户名：(.+)/);
+  const botNameMatch = (identity || '').match(/- 名称：(.+)/);
+  const userCallMatch = (user || '').match(/- 用户称谓：(.+)/);
+  const userNameMatch = (user || '').match(/- 用户名：(.+)/);
 
   return {
     bot_name: botNameMatch ? botNameMatch[1].trim() : '小Q管家',
@@ -1220,7 +1235,7 @@ async function doGenerateImage(prompt: string, style = 'realistic'): Promise<{ i
       enhancedPrompt = `Digital art style, ${prompt}, artistic, creative`;
     }
 
-    const { apiKey } = getOpenAIConfig();
+    const { apiKey } = getImageGenConfig();
     // 通义万相模型名称映射（用户可能配置错误的模型名）
     const modelMapping: Record<string, string> = {
       'qwen-image-2.0': 'wanx2.1-t2i-turbo',
@@ -1262,9 +1277,9 @@ async function doGenerateImage(prompt: string, style = 'realistic'): Promise<{ i
       return { imageUrl: null, error: '图片生成失败' };
     }
 
-    // 2. 轮询任务结果
-    const maxAttempts = 30;
-    const pollIntervalMs = 2000;
+    // 2. 轮询任务结果（优化：更频繁检查 + 更少轮次，最大等待从 60s 降到 20s）
+    const maxAttempts = 20;
+    const pollIntervalMs = 1000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
@@ -1820,10 +1835,12 @@ export function cleanContent(content: string): string {
 // ============================================
 
 async function runReActAgent(client: SupabaseClient, userId: number, userMessage: string): Promise<{ content: string; toolCalls?: unknown[] }> {
-  // 获取上下文
-  const identity = await toolReadIdentity(client, userId);
-  const memory = await toolReadMemory(client, userId);
-  const userInfo = await toolGetUserInfo(client, userId);
+  // 获取上下文（并行查询，节省 100-200ms）
+  const [identity, memory, userInfo] = await Promise.all([
+    toolReadIdentity(client, userId),
+    toolReadMemory(client, userId),
+    toolGetUserInfo(client, userId),
+  ]);
 
   const userCallName = identity.user_call_name || identity.user_name || userInfo.nickname;
 
@@ -2333,18 +2350,39 @@ export async function POST(request: NextRequest) {
           .maybeSingle();
 
         if (botUser) {
-          await client.from('messages').insert({
+          const { data: insertedMsg } = await client.from('messages').insert({
             conversation_id,
             sender_id: botUser.id,
             content: response,
             type: 'text',
-          });
+          }).select('id, created_at').single();
 
-          // 更新会话最后消息时间
+          // 更新会话最后消息时间和内容
           await client
             .from('conversations')
-            .update({ last_message_time: new Date().toISOString() })
+            .update({
+              last_message: response.substring(0, 50),
+              last_message_time: insertedMsg?.created_at || new Date().toISOString(),
+            })
             .eq('id', conversation_id);
+
+          // 通过 WebSocket 推送 Bot 新消息到会话内用户
+          const io = (globalThis as typeof globalThis & { io?: unknown }).io;
+          if (io) {
+            (io as { to: (room: string) => { emit: (event: string, data: unknown) => void } })
+              .to(`conversation_${conversation_id}`)
+              .emit('new_message', {
+                id: insertedMsg?.id,
+                conversation_id,
+                sender_id: botUser.id,
+                sender_nickname: botUser.nickname,
+                sender_avatar: botUser.avatar_color,
+                type: 'text',
+                content: response,
+                created_at: insertedMsg?.created_at || new Date().toISOString(),
+                is_mine: false,
+              });
+          }
         }
       } catch (persistError) {
         console.error('Bot 回复持久化失败:', persistError);
@@ -2363,7 +2401,7 @@ export async function POST(request: NextRequest) {
             response: auditLog!.response,
             tool_calls: auditLog!.toolCalls,
             latency_ms: Date.now() - startTime,
-            model: process.env.OPENAI_MODEL || '',
+            model: process.env.CHAT_MODEL || '',
             status: auditLog!.status,
             error: auditLog!.error,
           });
@@ -2391,7 +2429,7 @@ export async function POST(request: NextRequest) {
             response: auditLog!.response,
             tool_calls: auditLog!.toolCalls,
             latency_ms: Date.now() - startTime,
-            model: process.env.OPENAI_MODEL || '',
+            model: process.env.CHAT_MODEL || '',
             status: auditLog!.status,
             error: auditLog!.error,
           });
