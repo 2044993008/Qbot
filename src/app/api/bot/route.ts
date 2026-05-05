@@ -793,13 +793,37 @@ async function toolSearchMessages(client: SupabaseClient, userId: number, keywor
     return { messages: [], group: targetGroup.name };
   }
 
-  const { data: messages } = await client
+  const convId = conversations[0].id;
+
+  // 1. 先按内容关键词搜索
+  let { data: messages } = await client
     .from('messages')
     .select('sender_id, content, created_at')
-    .eq('conversation_id', conversations[0].id)
+    .eq('conversation_id', convId)
     .ilike('content', `%${keyword}%`)
     .order('created_at', { ascending: false })
     .limit(5);
+
+  // 2. 如果按内容搜不到，尝试把 keyword 当成发送者昵称搜索
+  if (!messages || messages.length === 0) {
+    // 查找昵称包含 keyword 的用户
+    const { data: matchedUsers } = await client
+      .from('users')
+      .select('id, nickname')
+      .ilike('nickname', `%${keyword}%`);
+
+    if (matchedUsers && matchedUsers.length > 0) {
+      const senderIds = matchedUsers.map((u: { id: number }) => u.id);
+      const { data: senderMessages } = await client
+        .from('messages')
+        .select('sender_id, content, created_at')
+        .eq('conversation_id', convId)
+        .in('sender_id', senderIds)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      messages = senderMessages;
+    }
+  }
 
   if (!messages || messages.length === 0) {
     return { messages: [], group: targetGroup.name };

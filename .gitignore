@@ -112,3 +112,10 @@ Desktop.ini
 
 # Temporary debug scripts
 /scripts/e2e-*.js
+
+# E2E test screenshots
+/e2e-screenshots/
+
+# Contest docs
+/参赛作品文档.md
+/演讲稿*.md
