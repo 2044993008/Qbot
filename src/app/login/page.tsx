@@ -75,7 +75,7 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-2xl shadow-lg mb-4">
             <span className="text-4xl font-bold text-[#12b7f5]">Q</span>
           </div>
-          <h1 className="text-3xl font-bold text-white">仿 QQ</h1>
+          <h1 className="text-3xl font-bold text-white">QQ</h1>
           <p className="text-white/80 mt-2">即时通讯，轻松连接</p>
         </div>
 

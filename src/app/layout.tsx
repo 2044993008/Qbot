@@ -5,10 +5,10 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: '仿 QQ - 即时通讯',
-    template: '%s | 仿 QQ',
+    default: 'QQ - 即时通讯',
+    template: '%s | QQ',
   },
-  description: '仿 QQ 即时通讯应用，支持聊天、好友、群聊、空间动态等功能',
+  description: 'QQ 即时通讯应用，支持聊天、好友、群聊、空间动态等功能',
   keywords: ['QQ', '即时通讯', '聊天', '社交'],
 };
 
