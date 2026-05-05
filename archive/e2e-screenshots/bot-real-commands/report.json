@@ -1,0 +1,188 @@
+{
+  "generatedAt": "2026-05-04T08:48:13.583Z",
+  "totalTests": 20,
+  "totalScreenshots": 40,
+  "tests": [
+    {
+      "id": "RC1",
+      "command": "你以后叫我老大，记住我喜欢吃火锅，然后跟我说句话",
+      "matchedKeywords": [],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC10",
+      "command": "生成一张美食图片发到空间，记住我今天想吃日料",
+      "matchedKeywords": [],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC1",
+      "command": "你以后叫我老大，记住我喜欢吃火锅，然后跟我说句话",
+      "matchedKeywords": [],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC10",
+      "command": "生成一张美食图片发到空间，记住我今天想吃日料",
+      "matchedKeywords": [],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC1",
+      "command": "你以后叫我老大，记住我喜欢吃火锅，然后跟我说句话",
+      "matchedKeywords": [],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC10",
+      "command": "生成一张美食图片发到空间，记住我今天想吃日料",
+      "matchedKeywords": [],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC1",
+      "command": "你以后叫我老大，记住我喜欢吃火锅，然后跟我说句话",
+      "matchedKeywords": [
+        "老大",
+        "火锅"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC10",
+      "command": "生成一张美食图片发到空间，记住我今天想吃日料",
+      "matchedKeywords": [
+        "美食",
+        "空间",
+        "日料"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC1",
+      "command": "你以后叫我老大，记住我喜欢吃火锅，然后跟我说句话",
+      "matchedKeywords": [],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC2",
+      "command": "搜一下群里关于项目的消息，把相关内容润色一下发给小李",
+      "matchedKeywords": [
+        "润色",
+        "小李"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC1",
+      "command": "你以后叫我老大，记住我喜欢吃火锅，然后跟我说句话",
+      "matchedKeywords": [
+        "老大",
+        "火锅"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC2",
+      "command": "搜一下群里关于项目的消息，把相关内容润色一下发给小李",
+      "matchedKeywords": [
+        "小李"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC3",
+      "command": "生成一张猫咪图片发给张小明，然后配个文案发空间",
+      "matchedKeywords": [
+        "猫",
+        "发送",
+        "空间"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC4",
+      "command": "看看我最近在班级群发了什么，润色成工作总结，然后设置每周五下午5点的工作汇报提醒",
+      "matchedKeywords": [
+        "工作总结",
+        "提醒"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC5",
+      "command": "读一下我的记忆，根据我的喜好生成一条空间动态文案并发布",
+      "matchedKeywords": [
+        "空间",
+        "发布"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC6",
+      "command": "告诉我我的信息，然后把你名字改成小助手，记住我喜欢跑步",
+      "matchedKeywords": [
+        "小助手",
+        "跑步"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC7",
+      "command": "把\"周末去爬山\"润色得文艺一点发到班级群，再生成一张山景图片也发群里",
+      "matchedKeywords": [
+        "班级群",
+        "图片"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC8",
+      "command": "搜一下上周关于会议的消息，总结成通知文案发到空间，再设一个明天早上9点的会议提醒",
+      "matchedKeywords": [
+        "会议",
+        "空间",
+        "提醒"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC9",
+      "command": "你叫什么名字？以后叫我老板，然后确认一下你的新名字",
+      "matchedKeywords": [
+        "名字"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    },
+    {
+      "id": "RC10",
+      "command": "生成一张美食图片发到空间，记住我今天想吃日料",
+      "matchedKeywords": [
+        "美食",
+        "空间",
+        "日料"
+      ],
+      "hasPreview": false,
+      "screenshots": 4
+    }
+  ]
+}
