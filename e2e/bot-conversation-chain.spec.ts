@@ -36,7 +36,7 @@ async function openBotChat(page: Page) {
   await expect(page.locator('textarea[placeholder*="输入消息"]')).toBeVisible({ timeout: 10000 });
 }
 
-async function sendMessage(page: Page, message: string): Promise<number> {
+async function sendMessage(page: Page, message: string): Promise<{ botCountBefore: number; lastKnownText: string }> {
   // 1. 确保上一条 SSE 流已完全结束：等待 typing indicator 消失
   const typingIndicator = page.locator('.message-bubble-received:has(.animate-bounce)');
   try {
@@ -44,8 +44,6 @@ async function sendMessage(page: Page, message: string): Promise<number> {
   } catch {
     // 没有 typing indicator，继续
   }
-  // 再多等 2 秒，确保最后一条消息 DOM 完全稳定
-  await page.waitForTimeout(2000);
 
   const input = page.locator('textarea[placeholder*="输入消息"]');
   await expect(input).toBeVisible();
@@ -54,21 +52,25 @@ async function sendMessage(page: Page, message: string): Promise<number> {
   const userMessages = page.locator('.message-bubble-sent');
   const userCountBefore = await userMessages.count();
 
-  // 记录当前 Bot 消息数量（不含 typing indicator）
+  // 记录当前 Bot 消息数量（不含 typing indicator）和最后一条已知文本
   const botMessages = page.locator('.message-bubble-received:not(:has(.animate-bounce))');
   const botCountBefore = await botMessages.count();
+  const lastKnownText = botCountBefore > 0
+    ? (await botMessages.nth(botCountBefore - 1).textContent({ timeout: 2000 }).catch(() => '')).trim()
+    : '';
 
   await input.press('Enter');
   await expect.poll(async () => await userMessages.count(), { timeout: 10000, intervals: [300] }).toBeGreaterThan(userCountBefore);
 
-  return botCountBefore;
+  return { botCountBefore, lastKnownText };
 }
 
 /**
  * 等待新增 Bot 回复完成。
  * @param initialBotCount 发送指令前已有的 Bot 消息数量（不含 typing indicator）
+ * @param lastKnownText 发送指令前最后一条已知 Bot 消息文本，用于区分新旧消息
  */
-async function waitForBotReply(page: Page, initialBotCount: number, timeout = 60000): Promise<string> {
+async function waitForBotReply(page: Page, initialBotCount: number, lastKnownText: string, timeout = 60000): Promise<string> {
   const botMessages = page.locator('.message-bubble-received:not(:has(.animate-bounce))');
   const startTime = Date.now();
   let lastText = '';
@@ -83,8 +85,8 @@ async function waitForBotReply(page: Page, initialBotCount: number, timeout = 60
       const text = await lastMsg.textContent({ timeout: 2000 }).catch(() => '');
       const trimmed = text.trim();
 
-      // 排除 typing indicator 和空内容
-      if (trimmed.length > 3 && !trimmed.includes('正在思考')) {
+      // 排除 typing indicator、空内容，以及上一条已知消息的重复内容
+      if (trimmed.length > 3 && !trimmed.includes('正在思考') && trimmed !== lastKnownText) {
         // 检查内容是否稳定（SSE 打字机效果是否结束）
         if (trimmed === lastText) {
           stableCount++;
@@ -115,8 +117,8 @@ async function checkPreviewCard(page: Page, timeout = 15000) {
 
 async function scrollToBottom(page: Page) {
   await page.evaluate(() => {
-    const containers = document.querySelectorAll('.overflow-y-auto');
-    for (const c of containers) (c as HTMLElement).scrollTop = c.scrollHeight;
+    const containers = Array.from(document.querySelectorAll('.overflow-y-auto'));
+    for (const c of containers) (c as HTMLElement).scrollTop = (c as HTMLElement).scrollHeight;
   });
 }
 
@@ -242,13 +244,13 @@ test('AI Butler - Single page continuous complex command chain', async ({ page }
     await scrollToBottom(page);
     await takeScreenshot(page, `${stepNum}_${cmd.id}_before_send`);
 
-    // Send command (returns bot count before sending)
-    const botCountBefore = await sendMessage(page, cmd.command);
+    // Send command (returns bot count before sending + last known text)
+    const { botCountBefore, lastKnownText } = await sendMessage(page, cmd.command);
     await scrollToBottom(page);
     await takeScreenshot(page, `${stepNum}_${cmd.id}_after_send`);
 
-    // Wait for NEW bot reply (must be > botCountBefore)
-    const response = await waitForBotReply(page, botCountBefore, 60000);
+    // Wait for NEW bot reply (must be > botCountBefore and != lastKnownText)
+    const response = await waitForBotReply(page, botCountBefore, lastKnownText, 60000);
     const durationMs = Date.now() - startTime;
 
     await scrollToBottom(page);
@@ -284,8 +286,8 @@ test('AI Butler - Single page continuous complex command chain', async ({ page }
 
   // Step 11: Context verification
   console.log('\n========== Context Verification ==========');
-  const ctxBotCount = await sendMessage(page, '你还记得我叫什么吗？我喜欢吃什么？');
-  const contextResponse = await waitForBotReply(page, ctxBotCount, 60000);
+  const { botCountBefore: ctxBotCount, lastKnownText: ctxLastKnownText } = await sendMessage(page, '你还记得我叫什么吗？我喜欢吃什么？');
+  const contextResponse = await waitForBotReply(page, ctxBotCount, ctxLastKnownText, 60000);
   await takeScreenshot(page, '11_context_verification');
   console.log(`Context response: ${contextResponse.substring(0, 150)}...`);
 
