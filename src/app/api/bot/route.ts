@@ -1347,12 +1347,13 @@ async function toolGenerateImage(client: SupabaseClient, userId: number, prompt:
   try {
     const result = await doGenerateImage(prompt, style);
     if (result.imageUrl) {
-      // 使用 Bot 的 sender_id 发送图片
+      // 使用 Bot 的 sender_id 发送图片（conversation_id=0 为预览模式，实际发送由调用方决定）
       const sendResult = await doSendMessageAsBot(client, userId, 0, result.imageUrl, 'image');
       if (sendResult.success) {
         return { success: true, message: '图片已生成并发送', imageUrl: result.imageUrl };
       }
-      return { success: false, error: '图片生成成功但发送失败' };
+      // 发送失败但仍返回 imageUrl，供后续步骤（如 publish_moment）使用
+      return { success: true, message: '图片已生成', imageUrl: result.imageUrl, sendError: '图片发送失败' };
     }
     return { success: false, error: result.error || '图片生成失败' };
   } catch (error) {
@@ -2098,13 +2099,25 @@ function resolveTemplateParams(
   for (const [key, value] of Object.entries(params)) {
     if (typeof value === 'string') {
       let newValue = value;
+      const isImageParam = key.toLowerCase().includes('image');
+
       // 1. 匹配 {{step2.text}}, {{step_2_result}}, {{step2.result}} 等
       newValue = newValue.replace(/\{\{step[_-]?(\d+)[._-]?(\w+)\}\}/gi, (_match, stepNum, field) => {
         const varKey = `step${stepNum}.${field.toLowerCase()}`;
+        // 图片类参数优先查找 stepX.imageUrl
+        if (isImageParam && field.toLowerCase() === 'result') {
+          const imageUrlKey = `step${stepNum}.imageurl`;
+          return context[imageUrlKey] ?? context[varKey] ?? _match;
+        }
         return context[varKey] ?? _match;
       });
       // 2. 匹配 {{step2}} 简写形式
       newValue = newValue.replace(/\{\{step[_-]?(\d+)\}\}/gi, (_match, stepNum) => {
+        // 图片类参数优先查找 stepX.imageUrl
+        if (isImageParam) {
+          const imageUrlKey = `step${stepNum}.imageurl`;
+          if (context[imageUrlKey]) return context[imageUrlKey];
+        }
         const varKey = `step${stepNum}.result`;
         return context[varKey] ?? _match;
       });
@@ -2157,6 +2170,10 @@ async function executePlan(
           if (typeof r.message === 'string') context[`step${stepNum}.message`] = r.message;
           if (typeof r.content === 'string') context[`step${stepNum}.content`] = r.content;
           if (typeof r.result === 'string') context[`step${stepNum}.result`] = r.result;
+          // generate_image 的 imageUrl 需要单独存入上下文，供 publish_moment 后续步骤引用
+          if (step.tool === 'generate_image' && typeof r.imageUrl === 'string') {
+            context[`step${stepNum}.imageUrl`] = r.imageUrl;
+          }
         }
       } catch (error) {
         stepResults.push(`${step.action}: 失败 - ${error instanceof Error ? error.message : String(error)}`);
@@ -2367,21 +2384,24 @@ export async function POST(request: NextRequest) {
             .eq('id', conversation_id);
 
           // 通过 WebSocket 推送 Bot 新消息到会话内用户
-          const io = (globalThis as typeof globalThis & { io?: unknown }).io;
-          if (io) {
-            (io as { to: (room: string) => { emit: (event: string, data: unknown) => void } })
-              .to(`conversation_${conversation_id}`)
-              .emit('new_message', {
-                id: insertedMsg?.id,
-                conversation_id,
-                sender_id: botUser.id,
-                sender_nickname: botUser.nickname,
-                sender_avatar: botUser.avatar_color,
-                type: 'text',
-                content: response,
-                created_at: insertedMsg?.created_at || new Date().toISOString(),
-                is_mine: false,
-              });
+          // 流式模式下（skip_websocket=true）不推送，由 SSE 负责返回内容，避免前端重复显示
+          if (!body.skip_websocket) {
+            const io = (globalThis as typeof globalThis & { io?: unknown }).io;
+            if (io) {
+              (io as { to: (room: string) => { emit: (event: string, data: unknown) => void } })
+                .to(`conversation_${conversation_id}`)
+                .emit('new_message', {
+                  id: insertedMsg?.id,
+                  conversation_id,
+                  sender_id: botUser.id,
+                  sender_nickname: botUser.nickname,
+                  sender_avatar: botUser.avatar_color,
+                  type: 'text',
+                  content: response,
+                  created_at: insertedMsg?.created_at || new Date().toISOString(),
+                  is_mine: false,
+                });
+            }
           }
         }
       } catch (persistError) {

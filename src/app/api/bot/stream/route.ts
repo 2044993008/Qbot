@@ -88,10 +88,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 所有请求统一走 Agent（支持工具调用、消息持久化）
+    // 标记 skip_websocket=true，避免流式模式下 WebSocket 和 SSE 双重推送导致前端重复显示
     const botRequest = new NextRequest(new URL('/api/bot', request.url), {
       method: 'POST',
       headers: request.headers,
-      body: JSON.stringify({ message: userMessage, conversation_id }),
+      body: JSON.stringify({ message: userMessage, conversation_id, skip_websocket: true }),
     });
 
     const botResponse = await botPost(botRequest);

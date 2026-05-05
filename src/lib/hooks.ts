@@ -147,9 +147,10 @@ export function useMessages(conversationId: number | null) {
         setMessages((prev) => {
           // 避免重复添加
           if (prev.some((m) => m.id === message.id)) return prev;
-          // 保留客户端临时消息
-          const tempMessages = prev.filter((m) => m.id < 0);
-          return [...prev.filter((m) => m.id > 0), message, ...tempMessages];
+          // 合并新消息后按 created_at 排序，确保时间顺序正确
+          const merged = [...prev, message];
+          merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+          return merged;
         });
       }
     };
@@ -176,7 +177,9 @@ export function useMessages(conversationId: number | null) {
           setMessages(prev => {
             // 避免重复添加（WebSocket 可能已推送）
             if (prev.some(m => m.id === response.message.id)) return prev;
-            return [...prev, response.message];
+            const merged = [...prev, response.message];
+            merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            return merged;
           });
         }
         return response.message;
